@@ -47,9 +47,9 @@ field() {
 # ── repositories ───────────────────────────────────────────────────────────
 render_config /repos /cache >"$scratch/pacman.conf"
 sections=$(sed -n 's/^\[\(.*\)\]$/\1/p' "$scratch/pacman.conf" | paste -sd' ' -)
-[[ $sections == "options omarchy-candidates asahi-alarm core extra alarm aur omarchy omarchy-aarch64" ]] ||
-  fail "the candidate set is first, then the Apple profile's order: $sections"
-pass "the candidate set comes first, then asahi-alarm, Arch Linux ARM and [omarchy]"
+[[ $sections == "options omarchy-candidates omarchy asahi-alarm core extra alarm aur omarchy-aarch64" ]] ||
+  fail "the candidate set is first, then the channel templates' order: $sections"
+pass "the candidate set comes first, then [omarchy], asahi-alarm and Arch Linux ARM"
 
 files=$(grep -c '^Server = file://' "$scratch/pacman.conf")
 ((files == 2)) && grep -Fxq 'Server = file:///repos/omarchy-candidates' "$scratch/pacman.conf" &&
@@ -906,10 +906,10 @@ runtime_template "$RUNTIME_TEMPLATE"
   candidates=$candidates
   fail() { builder_fail "$@"; }
   read_repository_order
-  [[ ${repository_order[*]} == "asahi-alarm core extra alarm aur omarchy" ]] ||
-    fail "a candidate set keeps the Apple profile's order: ${repository_order[*]}"
+  [[ ${repository_order[*]} == "omarchy asahi-alarm core extra alarm aur" ]] ||
+    fail "a candidate set keeps the pinned order: ${repository_order[*]}"
 )
-pass "a channel image searches [omarchy] first, as its runtime's Apple template does; a candidate set keeps [omarchy] last"
+pass "a channel image searches its runtime's Apple template's order; a candidate set searches [omarchy] first too"
 
 runtime_template "$(sed '/^\[aur\]/,$d' <<<"$RUNTIME_TEMPLATE")"
 (
@@ -973,9 +973,9 @@ if command -v pacman >/dev/null 2>&1; then
       fail "a channel image takes hyprland from [omarchy]: $(resolved "$scratch/channel.conf")"
   )
   render_config "$scratch/repos" "$scratch/cache" | sed 's/^Architecture = .*/Architecture = auto/' >"$scratch/candidate.conf"
-  [[ $(resolved "$scratch/candidate.conf") == "extra 0.51.1-2" ]] ||
-    fail "a candidate set's order still takes it from Arch Linux ARM: $(resolved "$scratch/candidate.conf")"
-  pass "pacman takes a package both [omarchy] and Arch Linux ARM carry from [omarchy] in a channel image"
+  [[ $(resolved "$scratch/candidate.conf") == "omarchy 0.52.0-1" ]] ||
+    fail "a candidate set takes hyprland from [omarchy] too: $(resolved "$scratch/candidate.conf")"
+  pass "pacman takes a package both [omarchy] and Arch Linux ARM carry from [omarchy], in a channel image and a candidate set"
 else
   echo "skip - pacman resolution of the repository order (no pacman on this host)"
 fi
@@ -1005,7 +1005,8 @@ if command -v pacman >/dev/null 2>&1; then
     'omarchy-mac-boot|20261023-1|%DEPENDS%\nasahi-scripts\nm1n1\nuboot-asahi\n\n'
   boot_db omarchy \
     'aura|0.1.0.r20261023-1|%PROVIDES%\nm1n1=1.6.1.aurora19\nm1n1-aurora=1.6.1.aurora19\nm1n1-neo=1.6.1.aurora19\n\n%CONFLICTS%\nm1n1\nm1n1-aurora\nm1n1-neo\n\n' \
-    'm1n1-neo|1.6.1.aurora16-1|%PROVIDES%\nm1n1=1.6.1.aurora16\n\n%CONFLICTS%\nm1n1\n\n'
+    'm1n1-neo|1.6.1.aurora16-1|%PROVIDES%\nm1n1=1.6.1.aurora16\n\n%CONFLICTS%\nm1n1\n\n' \
+    'aurora-scripts|20261023-1|%PROVIDES%\nasahi-scripts=20261023\n\n%CONFLICTS%\nasahi-scripts\n\n%REPLACES%\nasahi-scripts\n\n'
   boot_db asahi-alarm 'm1n1|1.6.1-1|' 'uboot-asahi|2026.07.asahi2-1|' 'asahi-scripts|20260127.1-1|'
   {
     printf '[options]\nArchitecture = auto\nSigLevel = Never\n'
@@ -1016,14 +1017,15 @@ if command -v pacman >/dev/null 2>&1; then
   boot_resolved() {
     pacman --config "$scratch/boot.conf" --dbpath "$scratch/boot-dbpath" --noconfirm -Sp --print-format '%r %n' "$@" 2>&1 | sort
   }
-  expected=$'asahi-alarm asahi-scripts\nomarchy-candidates m1n1-aurora\nomarchy-candidates omarchy-mac-boot\nomarchy-candidates uboot-aurora'
-  [[ $(boot_resolved omarchy-candidates/m1n1-aurora omarchy-candidates/uboot-aurora omarchy-candidates/omarchy-mac-boot) == "$expected" ]] ||
-    fail "the boot transaction resolves to m1n1-aurora, uboot-aurora and nothing they replace: $(boot_resolved omarchy-candidates/m1n1-aurora omarchy-candidates/uboot-aurora omarchy-candidates/omarchy-mac-boot)"
+  boot_set=(omarchy-candidates/m1n1-aurora omarchy-candidates/uboot-aurora omarchy-candidates/omarchy-mac-boot aurora-scripts)
+  expected=$'omarchy aurora-scripts\nomarchy-candidates m1n1-aurora\nomarchy-candidates omarchy-mac-boot\nomarchy-candidates uboot-aurora'
+  [[ $(boot_resolved "${boot_set[@]}") == "$expected" ]] ||
+    fail "the boot transaction resolves to m1n1-aurora, uboot-aurora, aurora-scripts and nothing they replace: $(boot_resolved "${boot_set[@]}")"
   # Without uboot-aurora in the same transaction the virtual dependency takes the
   # stock uboot-asahi, which the pre-check refuses.
   grep -Fxq 'asahi-alarm uboot-asahi' <<<"$(boot_resolved omarchy-candidates/m1n1-aurora)" ||
     fail "m1n1-aurora alone pulls the stock uboot-asahi: $(boot_resolved omarchy-candidates/m1n1-aurora)"
-  pass "pacman resolves the boot set to m1n1-aurora and uboot-aurora, never aura, m1n1-neo, m1n1 or uboot-asahi"
+  pass "pacman resolves the boot set to m1n1-aurora, uboot-aurora and aurora-scripts, never aura, m1n1-neo, m1n1, uboot-asahi or asahi-scripts"
 else
   echo "skip - pacman resolution of the boot transaction (no pacman on this host)"
 fi

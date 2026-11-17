@@ -56,9 +56,9 @@ BUILDER_ARRAYS = ('BOOTSTRAP', 'PLATFORM_PACKAGES', 'APPLE_AUDIO')
 APPLE_LISTS = ('omarchy-aarch64-apple', 'omarchy-apple-silicon', 'omarchy-apple')
 LISTS = 'usr/share/omarchy/install/'
 # The repositories the inputs pin besides omarchy, and build-mac-image's
-# repository_order for a candidate set ([omarchy] last).
+# repository_order for a candidate set ([omarchy] first).
 OTHER_REPOS = ('asahi-alarm', 'core', 'extra', 'alarm', 'aur')
-PINNED_ORDER = OTHER_REPOS + ('omarchy',)
+PINNED_ORDER = ('omarchy',) + OTHER_REPOS
 # read_repository_order's template, in the archive filling the omarchy-settings role.
 TEMPLATE = 'usr/share/omarchy/default/pacman/aarch64-apple/pacman-{channel}.conf'
 SECTION = re.compile(r'^[ \t\r\f\v]*\[([^]]*)\][ \t\r\f\v]*$', re.MULTILINE)

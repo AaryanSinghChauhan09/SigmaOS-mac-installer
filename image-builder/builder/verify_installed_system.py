@@ -49,7 +49,7 @@ REQUIRED_PACKAGES = (
     "limine",
     "limine-mkinitcpio-hook",
     "limine-snapper-sync",
-    "asahi-fwextract",
+    "aurora-fwextract",
     "speakersafetyd",
     "alsa-ucm-conf-asahi",
     "asahi-audio",
