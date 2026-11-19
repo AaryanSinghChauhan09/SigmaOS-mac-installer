@@ -88,7 +88,10 @@
         let systems = volumes.filter { $0.roles == ["System"] }
         let data = volumes.filter { $0.roles == ["Data"] }
         guard !systems.isEmpty, !data.isEmpty else { return .foreign }
-        guard stubSizes.contains(where: { $0.contains(part.size) }), volumes.count == 4,
+        // macOS can add an Update volume to a stub after the install.
+        let updates = volumes.filter { $0.roles == ["Update"] }
+        guard stubSizes.contains(where: { $0.contains(part.size) }), updates.count <= 1,
+          volumes.count == 4 + updates.count,
           systems.count == 1,
           data.count == 1, let group = systems[0].group, data[0].group == group,
           volumes.filter({ $0.roles == ["Preboot"] }).count == 1,

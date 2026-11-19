@@ -312,6 +312,24 @@
       assertRefusalPrefix(FakeRemovalDisk(grown, install: nil), "Found another system:")
     }
 
+    func testAStubWithAnUpdateVolumeMacOSAddedIsRecognised() throws {
+      var snapshot = F.alarm()
+      let index = snapshot.containers.firstIndex { $0.storeUUID == F.alarmInstall.stub }!
+      let stub = snapshot.containers[index]
+      let update = RemovalVolume(uuid: F.id(997), name: "Update", roles: ["Update"])
+      snapshot.containers[index] = RemovalContainer(
+        uuid: stub.uuid, storeUUID: stub.storeUUID, volumes: stub.volumes + [update])
+      let plan = try OmarchyRemovalPlan(disks: FakeRemovalDisk(snapshot, install: F.alarmInstall))
+      XCTAssertEqual(plan.kind, .installation)
+      XCTAssertEqual(plan.members.first?.uuid, F.alarmInstall.stub)
+
+      let second = RemovalVolume(uuid: F.id(996), name: "Update", roles: ["Update"])
+      snapshot.containers[index] = RemovalContainer(
+        uuid: stub.uuid, storeUUID: stub.storeUUID, volumes: stub.volumes + [update, second])
+      assertRefusalPrefix(
+        FakeRemovalDisk(snapshot, install: F.alarmInstall), "Found another system:")
+    }
+
     func testStubVolumesMustBeExactlyOneInstallationsVolumeGroup() {
       var snapshot = F.alarm()
       let index = snapshot.containers.firstIndex { $0.storeUUID == F.alarmInstall.stub }!
