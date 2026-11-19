@@ -131,13 +131,73 @@ def bump(config: dict, pin: dict) -> dict:
     return config
 
 
-def check(config: dict) -> None:
-    """The pipeline's catalog-inputs checks on the bumped config."""
+def published_channels(live=None) -> dict[str, dict]:
+    """The channel catalogs apps are served today: channel -> document. LIVE
+    fetches one channel's signed envelope and answers None where no catalog
+    is published; the GitHub stopgap is what the apps read while
+    APP_CATALOG_HOST is stopgap (mac-app-release.yml) — ticket 13 moves the
+    catalog to the catalog base, and this host moves with it."""
+    if live is None:
+        live = catalog.GitHubReleaseHost(catalog.stopgap_repo()).fetch
+    found = {}
+    for channel in catalog.RELEASE_CHANNELS:
+        try:
+            envelope = live(channel)
+        except Exception as error:
+            raise Refusal(f"the published catalog-{channel} could not be read ({error})") from None
+        if envelope is None:
+            continue
+        document, _signature = catalog.decode_envelope(envelope)
+        try:
+            found[channel] = json.loads(document)
+        except ValueError:
+            raise Refusal(f"the published catalog-{channel} is not JSON") from None
+    return found
+
+
+ENGINE_DATE = re.compile(r"\.(\d{8})\.")
+
+
+def engine_date(version: str) -> int:
+    """An engine name's date, 0 for a name without one: dated names follow
+    v0.9.2-omarchy.<YYYYMMDD>.<content id>, and only the date orders engines
+    (docs/engine-versions.md)."""
+    match = ENGINE_DATE.search(version)
+    return int(match.group(1)) if match else 0
+
+
+def check_published(config: dict, version: str, live=None) -> None:
+    """Every published channel catalog must already serve an engine no older
+    than the one Engine/source-lock.json pins before VERSION is offered: an
+    install runs the catalog's engine, so installer.latestVersion must not
+    outrun it. A channel serving a newer engine, or no catalog at all, is
+    fine."""
+    wanted = catalog.pipeline_engine(config["engine"])["version"]
+    for channel, document in published_channels(live).items():
+        models = document.get("models") if isinstance(document, dict) else None
+        if not isinstance(models, list) or not models:
+            raise Refusal(f"the published catalog-{channel} names no models")
+        for model in models:
+            served = model.get("engineVersion") if isinstance(model, dict) else None
+            if not isinstance(served, str):
+                raise Refusal(f"the published catalog-{channel} names a model with no engineVersion")
+            if served != wanted and engine_date(served) <= engine_date(wanted):
+                raise Refusal(f"catalog-{channel} serves engine {served}, not the pinned {wanted}; "
+                              f"publish the {channel} catalog before {version} is offered")
+
+
+def check(config: dict, pin: dict | None = None, live=None) -> None:
+    """The pipeline's catalog-inputs checks on the bumped config. An app pin
+    also asks that the channel catalogs already serve the pinned engine:
+    installer.latestVersion must not outrun the engine installs run."""
     try:
         catalog.check_installer(config["installer"], catalog.pipeline_engine(config["engine"]))
     except Refusal as error:
         raise Refusal(f"the bumped config fails the catalog's checks ({error}); "
                       "installer.minimumVersion moves only in a pull request of its own") from None
+    if pin is None or pin["kind"] != "app":
+        return
+    check_published(config, pin["version"], live=live)
 
 
 def branch(pin: dict) -> str:
@@ -197,12 +257,30 @@ def write(root: Path, old: dict, new: dict) -> None:
             path.write_text(path.read_text().replace(before, after))
 
 
-def main(argv: list[str] | None = None, root: Path = ROOT) -> int:
+def main(argv: list[str] | None = None, root: Path = ROOT, live=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--release", type=Path, required=True)
-    parser.add_argument("--tag-commit", required=True)
-    parser.add_argument("--body", type=Path, required=True)
+    parser.add_argument("--release", type=Path)
+    parser.add_argument("--tag-commit")
+    parser.add_argument("--body", type=Path)
+    parser.add_argument("--check-published", action="store_true",
+                        help="refuse while a published channel catalog serves an engine older "
+                             "than the one Engine/source-lock.json pins (the merge-time half of "
+                             "the app-pin check, run from the pin pull request's own checks)")
     args = parser.parse_args(argv)
+    if args.check_published:
+        if args.release is not None or args.tag_commit is not None or args.body is not None:
+            parser.error("--check-published takes no release, tag commit or body")
+        try:
+            config = json.loads((root / CONFIG).read_text())
+            installer = config.get("installer") or {}
+            check_published(config, installer.get("latestVersion", "?"), live=live)
+        except Refusal as error:
+            print(f"::error::{error}", file=sys.stderr)
+            return 1
+        print("changed=false")
+        return 0
+    if args.release is None or args.tag_commit is None or args.body is None:
+        parser.error("--release, --tag-commit and --body are required without --check-published")
     release = json.loads(args.release.read_text())
     found = kind(release.get("tag_name", ""))
     if found is None:
@@ -220,7 +298,7 @@ def main(argv: list[str] | None = None, root: Path = ROOT) -> int:
             print(f"::notice::{CONFIG} already pins {found} {pin['version']} or a later one", file=sys.stderr)
             print("changed=false")
             return 0
-        check(new)
+        check(new, pin, live=live)
     except Refusal as error:
         print(f"::error::{release['tag_name']}: {error}", file=sys.stderr)
         return 1

@@ -6,6 +6,7 @@ release, on main.
 """
 from __future__ import annotations
 
+import base64
 import importlib.util
 import io
 import json
@@ -164,6 +165,56 @@ class Bump(unittest.TestCase):
         pins.check(pins.bump(config(minimum=floor), pins.app_pin(app_release())))
 
 
+class PublishedChannels(unittest.TestCase):
+    """An app pin moves the installer every channel offers. The channel
+    catalogs must already serve the engine the pipeline pins: installer
+    2.3.16 shipped while catalog-stable still served engine 20261022, and
+    every install ran that older engine's Recovery manifest check."""
+
+    @staticmethod
+    def envelope(engine: str) -> bytes:
+        inner = base64.b64encode(json.dumps({"models": [{"engineVersion": engine}]}).encode())
+        document = {"schema_version": 1, "catalog": inner.decode(),
+                    "signature": base64.b64encode(b"0" * 64).decode()}
+        return json.dumps(document).encode()
+
+    def test_an_app_bump_refuses_while_a_channel_serves_an_older_engine(self):
+        older = "v0.9.2-omarchy.20260101." + "0" * 12
+        live = lambda channel: self.envelope(older) if channel == "stable" else None
+        with self.assertRaisesRegex(pins.Refusal, "catalog-stable serves engine"):
+            pins.check(config(), pins.app_pin(app_release()), live=live)
+
+    def test_an_app_bump_passes_when_the_channels_serve_the_pinned_engine(self):
+        pins.check(config(), pins.app_pin(app_release()), live=lambda channel: self.envelope(ENGINE))
+
+    def test_an_app_bump_allows_a_channel_serving_a_newer_engine(self):
+        newer = "v0.9.2-omarchy.20270101." + "0" * 12
+        pins.check(config(), pins.app_pin(app_release()), live=lambda channel: self.envelope(newer))
+
+    def test_an_app_bump_allows_a_channel_with_no_published_catalog(self):
+        pins.check(config(), pins.app_pin(app_release()), live=lambda channel: None)
+
+    def test_an_app_bump_refuses_a_channel_whose_models_say_nothing(self):
+        broken = [
+            {"models": []},
+            {"models": ["not an object"]},
+            {"models": [{"engineVersion": 1}]},
+            {"models": [{"deviceIdentifier": "apple,j274"}]},
+            "not an object",
+        ]
+        for document in broken:
+            inner = base64.b64encode(json.dumps(document).encode())
+            envelope = json.dumps({"schema_version": 1, "catalog": inner.decode(),
+                                   "signature": base64.b64encode(b"0" * 64).decode()}).encode()
+            with self.subTest(document), self.assertRaises(pins.Refusal):
+                pins.check(config(), pins.app_pin(app_release()), live=lambda channel: envelope)
+
+    def test_an_engine_bump_never_reads_the_published_channels(self):
+        def live(channel):
+            raise AssertionError("the published catalogs are not an engine pin's business")
+        pins.check(config(), pins.engine_pin(engine_release(), COMMIT, LOCK), live=live)
+
+
 class Main(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp(prefix="omarchy-pipeline-pins-"))
@@ -175,13 +226,15 @@ class Main(unittest.TestCase):
         for name in pins.TEMPLATES:
             shutil.copy(ROOT / name, self.root / name)
 
-    def run_main(self, release: dict, commit: str = COMMIT) -> tuple[int, dict, str, str]:
+    def run_main(self, release: dict, commit: str = COMMIT, live=None) -> tuple[int, dict, str, str]:
+        if live is None:
+            live = lambda channel: None
         path = self.root / "release.json"
         path.write_text(json.dumps(release))
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):
             status = pins.main(["--release", str(path), "--tag-commit", commit, "--body", str(self.root / "body.md")],
-                               root=self.root)
+                               root=self.root, live=live)
         # The workflow tees stdout into $GITHUB_OUTPUT: every line must be a key=value output.
         lines = out.getvalue().splitlines()
         for line in lines:
@@ -205,8 +258,28 @@ class Main(unittest.TestCase):
         self.assertEqual(new["engine"], self.config["engine"])
         body = (self.root / "body.md").read_text()
         self.assertIn(DMG_SHA, body)
-        self.assertIn(f"`installer.minimumVersion` stays {self.config['installer']['minimumVersion']}", body)
         self.assertIn("## Merge Danger", body)
+        self.assertIn(f"`installer.minimumVersion` stays {self.config['installer']['minimumVersion']}", body)
+
+    def test_an_app_release_opens_nothing_while_stable_serves_an_older_engine(self):
+        older = "v0.9.2-omarchy.20260101." + "0" * 12
+        live = lambda channel: PublishedChannels.envelope(older) if channel == "stable" else None
+        status, _outputs, log, written = self.run_main(app_release(self.newer()), live=live)
+        self.assertEqual(status, 1)
+        self.assertIn("catalog-stable serves engine", log)
+        self.assertEqual(json.loads(written), self.config)
+
+    def test_check_published_repeats_the_app_pin_check_without_a_release(self):
+        argv = ["--check-published"]
+        older = "v0.9.2-omarchy.20260101." + "0" * 12
+        stale = lambda channel: PublishedChannels.envelope(older)
+        with redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(pins.main(argv, root=self.root, live=stale), 1)
+        self.assertIn("catalog-rc serves engine", err.getvalue())
+        fresh = lambda channel: PublishedChannels.envelope(ENGINE)
+        with redirect_stderr(io.StringIO()) as err, redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(pins.main(argv, root=self.root, live=fresh), 0)
+        self.assertIn("changed=false", out.getvalue())
 
     def test_an_engine_release_moves_the_config_and_the_templates(self):
         old = self.config["engine"]["downstreamRevision"]

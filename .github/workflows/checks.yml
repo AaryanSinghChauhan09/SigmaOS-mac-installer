@@ -44,6 +44,25 @@ jobs:
           } | tee "$RUNNER_TEMP/installer-ci/toolchain.txt"
       - name: Run portable suite
         run: bash test/all 2>&1 | tee "$RUNNER_TEMP/installer-ci/portable.log"
+      # A pin pull request's merge-time half of the app-pin check: the bump
+      # workflow runs it before the pull request opens, and this repeats it
+      # against the catalogs live at this run — the catalogs or the lock can
+      # move in between. Only a branch that moves the installer block is an
+      # app pin; an engine pin's live catalogs legitimately lag until the
+      # next publish.
+      - name: Check an app pin against the published catalogs
+        if: github.ref != 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          git fetch -q --depth=1 origin "+main:refs/remotes/origin/main"
+          latest() { python3 -c "import json,sys; print(json.load(sys.stdin).get('installer', {}).get('latestVersion', ''))"; }
+          before=$(git show "origin/main:.github/mac-release-pipeline.json" | latest)
+          after=$(latest <.github/mac-release-pipeline.json)
+          if [[ $before == "$after" ]]; then
+            echo "::notice::installer.latestVersion is unchanged; no app pin to check"
+            exit 0
+          fi
+          python3 -I scripts/pipeline_pins.py --check-published
       - name: Save portable evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
