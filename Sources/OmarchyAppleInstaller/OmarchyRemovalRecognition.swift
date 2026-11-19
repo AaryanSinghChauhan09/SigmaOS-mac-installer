@@ -100,12 +100,13 @@
       }
     }
 
-    /// Software Update adds a permanent Update volume to a stub it treats as a macOS.
+    /// Software Update adds one permanent, ungrouped Update volume to a stub it
+    /// treats as a macOS.
     static func unrecognisedStubVolumes(_ container: RemovalContainer) -> [RemovalVolume] {
       let known: Set<[String]> = [["System"], ["Data"], ["Preboot"], ["Recovery"]]
       let extra = container.volumes.filter { !known.contains($0.roles) }
-      if extra.count == 1, extra[0].roles == ["Update"] { return [] }
-      return extra
+      let updates = extra.filter { $0.roles == ["Update"] && $0.group == nil }
+      return updates.count == 1 ? extra.filter { $0 != updates[0] } : extra
     }
 
     static func unrecognisedVolumeList(_ parts: [RemovalPartition], _ snapshot: RemovalSnapshot)
