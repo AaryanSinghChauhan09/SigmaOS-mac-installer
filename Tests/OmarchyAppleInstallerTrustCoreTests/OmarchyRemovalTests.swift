@@ -323,11 +323,27 @@
       XCTAssertEqual(plan.kind, .installation)
       XCTAssertEqual(plan.members.first?.uuid, F.alarmInstall.stub)
 
-      let second = RemovalVolume(uuid: F.id(996), name: "Update", roles: ["Update"])
+      let second = RemovalVolume(uuid: F.id(996), name: "Update 2", roles: ["Update"])
       snapshot.containers[index] = RemovalContainer(
         uuid: stub.uuid, storeUUID: stub.storeUUID, volumes: stub.volumes + [update, second])
       assertRefusalPrefix(
-        FakeRemovalDisk(snapshot, install: F.alarmInstall), "Found another system:")
+        FakeRemovalDisk(snapshot, install: F.alarmInstall), "Found disk0s3 (APFS container, 2.5 GB")
+    }
+
+    func testAStubWithAVolumeRemovalDoesNotKnowIsRefusedByThatVolume() {
+      var snapshot = F.alarm()
+      let index = snapshot.containers.firstIndex { $0.storeUUID == F.alarmInstall.stub }!
+      let stub = snapshot.containers[index]
+      snapshot.containers[index] = RemovalContainer(
+        uuid: stub.uuid, storeUUID: stub.storeUUID,
+        volumes: stub.volumes + [
+          RemovalVolume(uuid: F.id(997), name: "Update", roles: ["Update"]),
+          RemovalVolume(uuid: F.id(998), name: "VM", roles: ["VM"]),
+        ])
+      assertRefusal(
+        FakeRemovalDisk(snapshot, install: F.alarmInstall),
+        "Found disk0s3 (APFS container, 2.5 GB, volumes “Asahi Alarm Minimal”, “Asahi Alarm Minimal - Data”, “Preboot”, “Recovery”, “Update”, “VM”). It looks like an installation’s startup container, but removal doesn’t recognise “Update”, “VM”, so it stopped. Nothing was changed."
+      )
     }
 
     func testStubVolumesMustBeExactlyOneInstallationsVolumeGroup() {
@@ -349,7 +365,7 @@
         uuid: stub.uuid, storeUUID: stub.storeUUID,
         volumes: stub.volumes + [RemovalVolume(uuid: F.id(998), name: "VM", roles: ["VM"])])
       assertRefusalPrefix(
-        FakeRemovalDisk(snapshot, install: F.alarmInstall), "Found another system:")
+        FakeRemovalDisk(snapshot, install: F.alarmInstall), "Found disk0s3 (APFS container, 2.5 GB")
     }
 
     func testFrameMustBeISCThenBootedMacOSThenRecovery() {
