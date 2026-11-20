@@ -131,13 +131,90 @@ def bump(config: dict, pin: dict) -> dict:
     return config
 
 
-def check(config: dict) -> None:
-    """The pipeline's catalog-inputs checks on the bumped config."""
+def published_channels(live=None, trust_root=None) -> dict[str, dict]:
+    """The channel catalogs apps are served today: channel -> document. LIVE
+    fetches one channel's signed envelope; a 404 for rc or stable refuses,
+    since both channels are published and a deleted or moved asset would
+    switch the check off. The GitHub stopgap is what the apps read while
+    APP_CATALOG_HOST is stopgap (mac-app-release.yml) — ticket 13 moves the
+    catalog to the catalog base, and this host moves with it. Every envelope
+    must verify against the trust root before it is believed."""
+    host = catalog.GitHubReleaseHost(catalog.stopgap_repo())
+    if live is None:
+        live = host.fetch
+    if trust_root is None:
+        trust_root = catalog.read_trust_root(catalog.DEFAULT_TRUST_ROOT)
+    found = {}
+    for channel in catalog.RELEASE_CHANNELS:
+        try:
+            envelope = live(channel)
+        except Exception as error:
+            raise Refusal(f"the published catalog-{channel} could not be read ({error})") from None
+        if envelope is None:
+            raise Refusal(f"the published catalog-{channel} is missing: apps read {host.describe(channel)}; "
+                          "a deleted or moved catalog must not switch this check off")
+        try:
+            found[channel] = catalog.verify_envelope(envelope, trust_root)
+        except Refusal as error:
+            raise Refusal(f"the published catalog-{channel} does not verify: {error}") from None
+    return found
+
+
+# Recorded lane holds, the machine-readable form of docs/catalog-release.md's
+# "Lane holds" table: the exact engine digest an owner keeps on a channel.
+# Retire a row only after a real run re-signs the lane's catalog on the
+# locked engine and every host serving it reads the new catalog back.
+LANE_HOLDS = {
+    "rc": {
+        "digest": "sha256:5fea6b561e6fb82260f573bae099c70ba2e9998df56d38cf285987432320d4b5",
+        "engine": "v0.9.2-omarchy.20261022.31425f17fb9b",
+        # The owner of record, from identity.conf: the release owner holds this lane.
+        "owner": catalog.identity()["INSTALLER_GITHUB_RELEASE_LOGIN"],
+        "since": "2026-11-20",
+        "reason": "Owner decision; stable carries the fix",
+    },
+}
+
+def check_published(config: dict, version: str, live=None, trust_root=None) -> None:
+    """Every published channel catalog must pin the archive
+    Engine/source-lock.json pins, by digest: an install runs the catalog's
+    engineDigest, so installer.latestVersion must not outrun it before
+    VERSION is offered. A lane's recorded hold is the only other digest
+    accepted, and it is a notice, not silence; every lane is verified the
+    same — signature, one digest across its models, no missing catalog."""
+    wanted = f"sha256:{catalog.pipeline_engine(config['engine'])['sha256']}"
+    for channel, document in published_channels(live, trust_root).items():
+        try:
+            served = catalog.catalog_engine_digest(document)
+        except Refusal as error:
+            raise Refusal(f"the published catalog-{channel}: {error}") from None
+        if served == wanted:
+            continue
+        hold = LANE_HOLDS.get(channel)
+        if hold and served == hold["digest"]:
+            print(f"::notice::catalog-{channel} is on the recorded hold: engine {hold['engine']} "
+                  f"{served} (owner {hold['owner']}, since {hold['since']}: {hold['reason']})",
+                  file=sys.stderr)
+            continue
+        raise Refusal(f"catalog-{channel} pins engine digest {served}, not the locked {wanted}"
+                      + (f" nor its recorded hold {hold['digest']}" if hold else "")
+                      + f"; publish the {channel} catalog on the locked engine before "
+                        f"{version} is offered")
+
+
+def check(config: dict, pin: dict | None = None, live=None, trust_root=None) -> None:
+    """The pipeline's catalog-inputs checks on the bumped config. An app pin
+    also asks that the channel catalogs already pin the engine digest the
+    lock names: installer.latestVersion must not outrun the engine installs
+    run."""
     try:
         catalog.check_installer(config["installer"], catalog.pipeline_engine(config["engine"]))
     except Refusal as error:
         raise Refusal(f"the bumped config fails the catalog's checks ({error}); "
                       "installer.minimumVersion moves only in a pull request of its own") from None
+    if pin is None or pin["kind"] != "app":
+        return
+    check_published(config, pin["version"], live=live, trust_root=trust_root)
 
 
 def branch(pin: dict) -> str:
@@ -159,6 +236,10 @@ def body(pin: dict, old: dict, new: dict) -> str:
                  "download URL; the catalog step refuses a dmg the URL does not serve.")
         radius = (f"The next pipeline catalog offers app {pin['version']} as the latest; "
                   "the apps it turns away stay those below the unchanged minimum.")
+        published_line = ("- The published `catalog-rc` and `catalog-stable` verify against "
+                          "`Release/trust-root.ed25519.pub` and pin the engine digest `Engine/source-lock.json` "
+                          "pins, or their lane's recorded hold; this pull request's checks repeat it "
+                          "(`pipeline_pins.py --check-published`).\n")
     else:
         before = f"engine revision {old['engine']['downstreamRevision']}"
         after = f"engine revision {new['engine']['downstreamRevision']}"
@@ -168,6 +249,7 @@ def body(pin: dict, old: dict, new: dict) -> str:
         merge = ("Merge after `mac-mirror.yml` (artifact engine) has copied the archive to R2; the catalog step "
                  "refuses an engine that is not mirrored.")
         radius = "The next pipeline catalog names this engine's revision."
+        published_line = ""
     minimum = (old.get("installer") or {}).get("minimumVersion")
     return (
         "## Summary\n\n"
@@ -178,6 +260,7 @@ def body(pin: dict, old: dict, new: dict) -> str:
         "## Evidence\n\n"
         f"{digest_line}\n"
         "- `catalog_release.check_installer` and `pipeline_engine` accept the bumped config.\n"
+        f"{published_line}"
         "- `test_release_pipeline.py`, `test_catalog_release.py` and `test_pipeline_pins.py` pass on it.\n\n"
         "## Merge Danger\n\n"
         "**Door:** two-way\n\n"
@@ -197,12 +280,32 @@ def write(root: Path, old: dict, new: dict) -> None:
             path.write_text(path.read_text().replace(before, after))
 
 
-def main(argv: list[str] | None = None, root: Path = ROOT) -> int:
+def main(argv: list[str] | None = None, root: Path = ROOT, live=None, trust_root=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--release", type=Path, required=True)
-    parser.add_argument("--tag-commit", required=True)
-    parser.add_argument("--body", type=Path, required=True)
+    parser.add_argument("--release", type=Path)
+    parser.add_argument("--tag-commit")
+    parser.add_argument("--body", type=Path)
+    parser.add_argument("--check-published", action="store_true",
+                        help="refuse while a published channel catalog pins an engine digest "
+                             "other than the locked one or its lane's recorded hold: the "
+                             "app-pin check again, run by the pin pull request's checks "
+                             "against the catalogs live at that run and the branch's lock")
     args = parser.parse_args(argv)
+    if args.check_published:
+        if args.release is not None or args.tag_commit is not None or args.body is not None:
+            parser.error("--check-published takes no release, tag commit or body")
+        try:
+            config = json.loads((root / CONFIG).read_text())
+            installer = config.get("installer") or {}
+            check_published(config, installer.get("latestVersion", "?"), live=live,
+                            trust_root=trust_root)
+        except Refusal as error:
+            print(f"::error::{error}", file=sys.stderr)
+            return 1
+        print("changed=false")
+        return 0
+    if args.release is None or args.tag_commit is None or args.body is None:
+        parser.error("--release, --tag-commit and --body are required without --check-published")
     release = json.loads(args.release.read_text())
     found = kind(release.get("tag_name", ""))
     if found is None:
@@ -220,7 +323,7 @@ def main(argv: list[str] | None = None, root: Path = ROOT) -> int:
             print(f"::notice::{CONFIG} already pins {found} {pin['version']} or a later one", file=sys.stderr)
             print("changed=false")
             return 0
-        check(new)
+        check(new, pin, live=live, trust_root=trust_root)
     except Refusal as error:
         print(f"::error::{release['tag_name']}: {error}", file=sys.stderr)
         return 1

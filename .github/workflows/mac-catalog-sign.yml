@@ -44,6 +44,10 @@ on:
         description: Promotion only, optional - sha256 the source's signed catalog must have
         type: string
         default: ''
+      allow-engine-digest:
+        description: rc or stable only - sha256:<hex> of an engine other than Engine/source-lock.json's to keep (an owner-approved rollback or lane hold, docs/catalog-release.md)
+        type: string
+        default: ''
       dry-run:
         description: Sign and publish to a scratch directory only
         type: boolean
@@ -102,6 +106,7 @@ jobs:
           EXPECTED: ${{ inputs.catalog-sha256 }}
           GATE: ${{ inputs.gate }}
           SOURCE_SHA256: ${{ inputs.source-sha256 }}
+          ALLOW_ENGINE_DIGEST: ${{ inputs.allow-engine-digest }}
         run: |
           set -euo pipefail
           inputs=$RUNNER_TEMP/catalog-inputs
@@ -125,6 +130,18 @@ jobs:
               exit 1
               ;;
           esac
+          # Both gates: an rc or stable catalog runs the engine this run's
+          # Engine/source-lock.json pins unless the owner allowed this exact
+          # digest (docs/catalog-release.md, "Lane holds").
+          gate=$(python3 scripts/catalog_release.py check-engine --catalog "$catalog" \
+            --allow-engine-digest "$ALLOW_ENGINE_DIGEST")
+          echo "$gate"
+          {
+            echo "### Engine gate"
+            echo "\`$gate\`"
+            echo
+            echo "catalog sha256 \`$EXPECTED\`, run commit \`$GITHUB_SHA\`, allow-engine-digest \`${ALLOW_ENGINE_DIGEST:-none}\`"
+          } >>"$GITHUB_STEP_SUMMARY"
 
       - name: Sign
         env:
