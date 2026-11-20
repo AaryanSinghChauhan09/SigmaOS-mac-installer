@@ -139,20 +139,19 @@ def published_channels(live=None, trust_root=None) -> dict[str, dict]:
     APP_CATALOG_HOST is stopgap (mac-app-release.yml) — ticket 13 moves the
     catalog to the catalog base, and this host moves with it. Every envelope
     must verify against the trust root before it is believed."""
+    host = catalog.GitHubReleaseHost(catalog.stopgap_repo())
     if live is None:
-        live = catalog.GitHubReleaseHost(catalog.stopgap_repo()).fetch
+        live = host.fetch
     if trust_root is None:
         trust_root = catalog.read_trust_root(catalog.DEFAULT_TRUST_ROOT)
     found = {}
     for channel in catalog.RELEASE_CHANNELS:
-        url = (f"https://github.com/{catalog.stopgap_repo()}/releases/download/"
-               f"catalog-{channel}/catalog-{channel}.signed.json")
         try:
             envelope = live(channel)
         except Exception as error:
             raise Refusal(f"the published catalog-{channel} could not be read ({error})") from None
         if envelope is None:
-            raise Refusal(f"the published catalog-{channel} is missing: apps read {url}; "
+            raise Refusal(f"the published catalog-{channel} is missing: apps read {host.describe(channel)}; "
                           "a deleted or moved catalog must not switch this check off")
         try:
             found[channel] = catalog.verify_envelope(envelope, trust_root)
@@ -176,9 +175,6 @@ LANE_HOLDS = {
     },
 }
 
-ENGINE_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
-
-
 def check_published(config: dict, version: str, live=None, trust_root=None) -> None:
     """Every published channel catalog must pin the archive
     Engine/source-lock.json pins, by digest: an install runs the catalog's
@@ -188,18 +184,10 @@ def check_published(config: dict, version: str, live=None, trust_root=None) -> N
     same — signature, one digest across its models, no missing catalog."""
     wanted = f"sha256:{catalog.pipeline_engine(config['engine'])['sha256']}"
     for channel, document in published_channels(live, trust_root).items():
-        models = document.get("models") if isinstance(document, dict) else None
-        if not isinstance(models, list) or not models:
-            raise Refusal(f"the published catalog-{channel} names no models")
-        digests = set()
-        for model in models:
-            served = model.get("engineDigest") if isinstance(model, dict) else None
-            if not isinstance(served, str) or not ENGINE_DIGEST.match(served):
-                raise Refusal(f"the published catalog-{channel} names a model with no engineDigest")
-            digests.add(served)
-        if len(digests) != 1:
-            raise Refusal(f"the published catalog-{channel} pins mixed engine digests")
-        served = digests.pop()
+        try:
+            served = catalog.catalog_engine_digest(document)
+        except Refusal as error:
+            raise Refusal(f"the published catalog-{channel}: {error}") from None
         if served == wanted:
             continue
         hold = LANE_HOLDS.get(channel)
@@ -248,6 +236,10 @@ def body(pin: dict, old: dict, new: dict) -> str:
                  "download URL; the catalog step refuses a dmg the URL does not serve.")
         radius = (f"The next pipeline catalog offers app {pin['version']} as the latest; "
                   "the apps it turns away stay those below the unchanged minimum.")
+        published_line = ("- The published `catalog-rc` and `catalog-stable` verify against "
+                          "`Release/trust-root.ed25519.pub` and pin the engine digest `Engine/source-lock.json` "
+                          "pins, or their lane's recorded hold; this pull request's checks repeat it "
+                          "(`pipeline_pins.py --check-published`).\n")
     else:
         before = f"engine revision {old['engine']['downstreamRevision']}"
         after = f"engine revision {new['engine']['downstreamRevision']}"
@@ -257,6 +249,7 @@ def body(pin: dict, old: dict, new: dict) -> str:
         merge = ("Merge after `mac-mirror.yml` (artifact engine) has copied the archive to R2; the catalog step "
                  "refuses an engine that is not mirrored.")
         radius = "The next pipeline catalog names this engine's revision."
+        published_line = ""
     minimum = (old.get("installer") or {}).get("minimumVersion")
     return (
         "## Summary\n\n"
@@ -267,6 +260,7 @@ def body(pin: dict, old: dict, new: dict) -> str:
         "## Evidence\n\n"
         f"{digest_line}\n"
         "- `catalog_release.check_installer` and `pipeline_engine` accept the bumped config.\n"
+        f"{published_line}"
         "- `test_release_pipeline.py`, `test_catalog_release.py` and `test_pipeline_pins.py` pass on it.\n\n"
         "## Merge Danger\n\n"
         "**Door:** two-way\n\n"
@@ -293,9 +287,9 @@ def main(argv: list[str] | None = None, root: Path = ROOT, live=None, trust_root
     parser.add_argument("--body", type=Path)
     parser.add_argument("--check-published", action="store_true",
                         help="refuse while a published channel catalog pins an engine digest "
-                             "other than the locked one or its lane's recorded hold (the "
-                             "merge-time half of the app-pin check, run from the pin pull "
-                             "request's own checks)")
+                             "other than the locked one or its lane's recorded hold: the "
+                             "app-pin check again, run by the pin pull request's checks "
+                             "against the catalogs live at that run and the branch's lock")
     args = parser.parse_args(argv)
     if args.check_published:
         if args.release is not None or args.tag_commit is not None or args.body is not None:

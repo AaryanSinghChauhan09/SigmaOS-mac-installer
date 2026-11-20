@@ -6,6 +6,7 @@ release, on main.
 """
 from __future__ import annotations
 
+import atexit
 import base64
 import importlib.util
 import io
@@ -49,7 +50,7 @@ except catalog.Refusal:
     OPENSSL = None
 
 
-def make_key(directory: Path) -> tuple[bytes, bytes]:
+def make_key() -> tuple[bytes, bytes]:
     """A throwaway Ed25519 key: (seed, public key) as raw bytes."""
     der = subprocess.run([OPENSSL, "genpkey", "-algorithm", "ed25519", "-outform", "DER"],
                          capture_output=True, check=True).stdout
@@ -65,7 +66,8 @@ def key_material() -> tuple[bytes, bytes, Path]:
     global _KEY
     if _KEY is None:
         directory = Path(tempfile.mkdtemp(prefix="omarchy-pipeline-pins-key-"))
-        seed, trust_root = make_key(directory)
+        atexit.register(shutil.rmtree, directory, True)
+        seed, trust_root = make_key()
         _KEY = (seed, trust_root, directory)
     return _KEY
 
@@ -228,8 +230,7 @@ class PublishedChannels(unittest.TestCase):
 
     @classmethod
     def foreign_key(cls) -> bytes:
-        seed, _root, directory = key_material()
-        other, _pub = make_key(directory)
+        other, _pub = make_key()
         return other
 
     @classmethod
@@ -258,10 +259,13 @@ class PublishedChannels(unittest.TestCase):
             self.check(live)
 
     def test_an_app_bump_refuses_a_tampered_envelope(self):
-        envelope = bytearray(self.envelope(LOCKED_DIGEST))
-        envelope[40] ^= 0xFF
-        with self.assertRaises(pins.Refusal):
-            self.check(lambda channel: bytes(envelope))
+        envelope = json.loads(self.envelope(OTHER_DIGEST))
+        edited = json.loads(base64.b64decode(envelope["catalog"]))
+        edited["models"][0]["engineDigest"] = LOCKED_DIGEST
+        envelope["catalog"] = base64.b64encode(json.dumps(edited).encode()).decode()
+        tampered = json.dumps(envelope).encode()
+        with self.assertRaisesRegex(pins.Refusal, "catalog-rc does not verify"):
+            self.check(lambda channel: tampered)
 
     def test_an_app_bump_refuses_malformed_models(self):
         broken = [
@@ -295,6 +299,14 @@ class PublishedChannels(unittest.TestCase):
         live = lambda channel: self.envelope(HELD_DIGEST) if channel == "stable" else self.live_locked(channel)
         with self.assertRaisesRegex(pins.Refusal, "catalog-stable pins engine digest"):
             self.check(live)
+
+    def test_the_rc_hold_matches_the_lane_holds_table(self):
+        rows = [line for line in (ROOT / "docs" / "catalog-release.md").read_text().splitlines()
+                if line.startswith("| rc |")]
+        self.assertEqual(len(rows), 1, "docs/catalog-release.md must record exactly one rc hold")
+        hold = pins.LANE_HOLDS["rc"]
+        for value in (hold["engine"], hold["digest"], hold["owner"], hold["since"], hold["reason"]):
+            self.assertIn(value, rows[0])
 
     def test_an_engine_bump_never_reads_the_published_channels(self):
         def live(channel):
@@ -331,11 +343,16 @@ class Main(unittest.TestCase):
         outputs = dict(line.split("=", 1) for line in lines)
         return status, outputs, out.getvalue() + err.getvalue(), (self.root / pins.CONFIG).read_text()
 
+    def need_openssl(self) -> None:
+        if OPENSSL is None:
+            self.skipTest("OpenSSL 3 is required to sign the fixture catalogs")
+
     def newer(self) -> str:
         major, minor, patch = catalog.version_tuple(self.config["installer"]["latestVersion"])
         return f"{major}.{minor}.{patch + 1}"
 
     def test_an_app_release_writes_the_config_and_the_pull_request(self):
+        self.need_openssl()
         version = self.newer()
         status, outputs, log, written = self.run_main(app_release(version))
         self.assertEqual(status, 0, log)
@@ -349,8 +366,10 @@ class Main(unittest.TestCase):
         self.assertIn(DMG_SHA, body)
         self.assertIn("## Merge Danger", body)
         self.assertIn(f"`installer.minimumVersion` stays {self.config['installer']['minimumVersion']}", body)
+        self.assertIn("--check-published", body)
 
     def test_an_app_release_opens_nothing_while_stable_pins_another_engine(self):
+        self.need_openssl()
         live = (lambda channel: PublishedChannels.envelope(OTHER_DIGEST)
                 if channel == "stable" else PublishedChannels.live_locked(channel))
         status, _outputs, log, written = self.run_main(app_release(self.newer()), live=live)
@@ -359,6 +378,7 @@ class Main(unittest.TestCase):
         self.assertEqual(json.loads(written), self.config)
 
     def test_check_published_repeats_the_app_pin_check_without_a_release(self):
+        self.need_openssl()
         argv = ["--check-published"]
         stale = lambda channel: PublishedChannels.envelope(OTHER_DIGEST)
         with redirect_stderr(io.StringIO()) as err:
@@ -369,6 +389,10 @@ class Main(unittest.TestCase):
             self.assertEqual(pins.main(argv, root=self.root, live=PublishedChannels.live_locked,
                                        trust_root=key_material()[1]), 0)
         self.assertIn("changed=false", out.getvalue())
+
+    def test_check_published_takes_no_release(self):
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            pins.main(["--check-published", "--body", str(self.root / "body.md")], root=self.root)
 
     def test_an_engine_release_moves_the_config_and_the_templates(self):
         old = self.config["engine"]["downstreamRevision"]
