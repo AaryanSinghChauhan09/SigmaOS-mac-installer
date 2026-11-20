@@ -55,7 +55,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch -q --depth=1 origin "+main:refs/remotes/origin/main"
-          latest() { python3 -c "import json,sys; print(json.load(sys.stdin).get('installer', {}).get('latestVersion', ''))"; }
+          latest() { python3 -c "import json,sys; print((json.load(sys.stdin).get('installer') or {}).get('latestVersion', ''))"; }
           before=$(git show "origin/main:.github/mac-release-pipeline.json" | latest)
           after=$(latest <.github/mac-release-pipeline.json)
           if [[ $before == "$after" ]]; then
