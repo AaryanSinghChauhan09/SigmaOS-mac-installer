@@ -218,8 +218,10 @@ def check_apple_packages(root: Path, report: dict) -> str:
              if fields and not fields[0].startswith("#")]
     require(bool(names), f"{path.name} names no package")
     packages = installed_system.installed_provides(root)
-    # The image installs aurora-bless where the list names asahi-bless.
+    # The image installs aurora-bless where the list names asahi-bless, and a
+    # lane without the imports asahi-alarm's tools where it names aurora's.
     filled = set(packages) | installed_system.aurora_replaced(packages)
+    filled |= {name for name, legacy in installed_system.LEGACY_NAMES.items() if legacy in packages}
     report["apple_package_list"] = path.name
     missing = [name for name in names if name not in filled]
     require(not missing, f"{path.name} names packages that are not installed: {' '.join(missing)}")

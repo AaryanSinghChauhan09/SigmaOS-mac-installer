@@ -609,7 +609,7 @@ def make_root(root: Path, candidates: Path, layout: str | None = None, lane: str
         owners.setdefault(owner, []).append(rel)
     owners.setdefault("limine", []).append("usr/share/limine/BOOTAA64.EFI")
     versions = {p["name"]: p["version"] for p in summary["packages"]}
-    others = {name: "1.0-1" for name in ("limine", "limine-snapper-sync", "asahi-fwextract", "speakersafetyd",
+    others = {name: "1.0-1" for name in ("limine", "limine-snapper-sync", "aurora-fwextract", "speakersafetyd",
                                          "alsa-ucm-conf-asahi", "asahi-audio", "vulkan-asahi", "asahi-bless", "iwd",
                                          "networkmanager", "bluez", "wireplumber")}
     provides = {p["name"]: (p["role"],) for p in summary["packages"] if p.get("role", p["name"]) != p["name"]}
