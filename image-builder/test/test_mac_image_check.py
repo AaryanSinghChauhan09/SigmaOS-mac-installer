@@ -304,7 +304,7 @@ class ChannelBuildDirectoryTest(unittest.TestCase):
         target = metadata["os_list"][0]
         self.assertNotIn("allowed_device_classes", target)
         self.assertNotIn("excluded_device_classes", target)
-        self.assertEqual(target["supported_fw"], ["13.5", "14.8.3", "26.6.2"])
+        self.assertEqual(target["supported_fw"], ["13.5", "14.8.3", "26.5.1", "26.6.2"])
         for member in ("esp/aurora/stage1-j700.bin", "esp/m1n1/boot-j700.bin"):
             with self.subTest(member):
                 fixtures.write_payload(self.out / NAME, check.BOOT_UUID, check.ROOT_UUID, omit=(member,),
@@ -347,7 +347,7 @@ class ChannelBuildDirectoryTest(unittest.TestCase):
         metadata = json.loads((self.out / "installer_data.json").read_text())
         engine = json.loads((ROOT.parent / "Engine/installer_data.json").read_text())
         # A public image adds only the native Recovery declaration to the engine's template.
-        engine["os_list"][0].update(package=NAME, supported_fw=["13.5", "14.8.3", "26.6.2"],
+        engine["os_list"][0].update(package=NAME, supported_fw=["13.5", "14.8.3", "26.5.1", "26.6.2"],
                                     recovery_gui="omarchy-native-v1")
         self.assertEqual(metadata, engine)
 

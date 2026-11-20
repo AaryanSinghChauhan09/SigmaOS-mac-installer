@@ -80,7 +80,10 @@ M4_BOARDS = ["j604ap", "j623ap", "j624ap", "j713ap", "j715ap", "j773gap",
 CHIP_MIN_VER = {0x8103: "11.0", 0x8112: "12.4", 0x8122: "14.8.3", 0x8140: "26.6"}
 DEVICE_MIN = {"j313ap": "11.0", "j413ap": "12.4", "j613ap": "14.8.3",
               "j615ap": "14.8.3", "j700ap": "26.6", **{board: PATCHED_DEVICES.get(board) for board in M4_BOARDS}}
-CHIP_MIN_VER.update({chip: PATCHED_CHIPS.get(chip) for chip in M4_CHIPS})
+DEVICE_MIN["j815ap"] = PATCHED_DEVICES.get("j815ap")
+CHIP_MIN_VER.update({chip: PATCHED_CHIPS.get(chip) for chip in M4_CHIPS | {0x8142}})
+ON_26_5_1 = dict(sys_firmware="mBoot-18000.120.36", macos_ver="26.5.1",
+                 sfr_full_ver="25.6.80.0.0,0")
 TODAY = ["13.5", "14.8.3", "26.6"]
 ON_26_6_2 = dict(sys_firmware="mBoot-18000.161.10", macos_ver="26.6.2",
                  sfr_full_ver="25.7.83.0.0,0")
@@ -108,11 +111,12 @@ def choose(sysinfo, device, supported_fw):
 
 class PatchedFirmwareTableTests(unittest.TestCase):
     def test_the_airs_26_6_2_entry_follows_the_neos_26_6_entry(self):
-        neo, air = IPSW_VERSIONS[:2]
+        neo, j815, air = IPSW_VERSIONS[:3]
+        self.assertEqual((j815.version, j815.devices), ("26.5.1", ["j815ap"]))
         self.assertEqual((neo.version, neo.devices), ("26.6", ["j700ap"]))
         self.assertEqual(air, IPSW(
             "26.6.2", "26.0", "mBoot-18000.161.10", "25.7.83.0.0,0", False,
-            ["j613ap", "j615ap", "j700ap"] + M4_BOARDS,
+            ["j613ap", "j615ap", "j700ap"] + M4_BOARDS + ["j815ap"],
             "https://updates.cdn-apple.com/2026SummerFCS/fullrestores/140-75212/"
             "A2A24B94-1FC1-45A3-93F7-C51B02AF1F4D/UniversalMac_26.6.2_25G83_Restore.ipsw"))
 
@@ -149,6 +153,37 @@ class M4FirmwareTableTests(unittest.TestCase):
         sysinfo, device = mac("j616sap", 0x6040, sys_firmware="mBoot-18000.161.9",
                               macos_ver="26.6", sfr_full_ver="25.7.72.0.0,0")
         self.assertIsNone(choose(sysinfo, device, ["26.6.2"])[0])
+
+
+class M5AirFirmwareTableTests(unittest.TestCase):
+    """The J815 (M5 MacBook Air 15-inch, T8142): its own 26.5.1 entry for a Mac kept
+    on 26.5.1 system firmware, and the 26.6.2 entry once its firmware allows it."""
+
+    def test_the_patch_admits_t8142_and_the_j815_on_26_5_1(self):
+        self.assertEqual(PATCHED_CHIPS.get(0x8142), "26.5.1")
+        self.assertEqual(PATCHED_DEVICES.get("j815ap"), "26.5.1")
+        entry = next(ipsw for ipsw in IPSW_VERSIONS if ipsw.version == "26.5.1")
+        self.assertEqual((entry.min_iboot, entry.min_sfr, entry.devices),
+                         ("mBoot-18000.120.36", "25.6.80.0.0,0", ["j815ap"]))
+
+    def test_a_j815_on_26_5_1_takes_the_26_5_1_stub(self):
+        sysinfo, device = mac("j815ap", 0x8142, **ON_26_5_1)
+        self.assertEqual(choose(sysinfo, device, TODAY + ["26.5.1", "26.6.2"]),
+                         ("26.5.1", STUB_SIZE_MACOS26))
+
+    def test_a_j815_on_26_6_2_takes_the_26_6_2_stub(self):
+        sysinfo, device = mac("j815ap", 0x8142)
+        self.assertEqual(choose(sysinfo, device, TODAY + ["26.5.1", "26.6.2"])[0], "26.6.2")
+
+    def test_a_payload_without_26_5_1_offers_a_26_5_1_j815_nothing(self):
+        sysinfo, device = mac("j815ap", 0x8142, **ON_26_5_1)
+        self.assertIsNone(choose(sysinfo, device, TODAY + ["26.6.2"])[0])
+
+    def test_no_other_mac_takes_the_26_5_1_stub(self):
+        for board, chip in (("j713ap", 0x8132), ("j616sap", 0x6040), ("j613ap", 0x8122)):
+            with self.subTest(board):
+                sysinfo, device = mac(board, chip, **ON_26_5_1)
+                self.assertIsNone(choose(sysinfo, device, ["26.5.1"])[0])
 
 
 class DefaultFirmwareTests(unittest.TestCase):
