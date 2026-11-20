@@ -127,8 +127,6 @@
   }
 
   public actor ClosedEngineHelperServer {
-    private static let explicitlyUnsupportedDevices = ["apple,j614s"]
-
     private let workingDirectory: URL
     private let credentialValidator: any MachineOwnerCredentialValidating
     private let executor: any ImportedEngineHandoffExecuting
@@ -412,16 +410,6 @@
         try importer.prepare(from: packageDirectory, in: workingDirectory)
       }
       defer { try? FileManager.default.removeItem(at: package.packageURL) }
-
-      guard
-        !Self.explicitlyUnsupportedDevices.contains(
-          package.deviceIdentifier
-        )
-      else {
-        throw ClosedEngineHelperError.unsupportedDevice(
-          package.deviceIdentifier
-        )
-      }
 
       var tailer: EngineJournalTailer?
       if let progress,

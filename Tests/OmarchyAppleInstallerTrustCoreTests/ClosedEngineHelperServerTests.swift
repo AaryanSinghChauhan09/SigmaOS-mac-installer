@@ -261,7 +261,9 @@
         try importedEntries(in: fixture.destination).map(\.lastPathComponent), ["diagnostics"])
     }
 
-    func testM4PackageIsRejectedBeforeExecution() async throws {
+    /// The helper refuses no board by name: the package was bound to a signed
+    /// catalog and an engine plan before it got here.
+    func testAnM4PackageIsNotRefusedByName() async throws {
       let fixture = try makeFixture(deviceIdentifier: "apple,j614s")
       defer { try? FileManager.default.removeItem(at: fixture.root) }
       let source = try openDirectory(fixture.source)
@@ -273,20 +275,13 @@
         credentialValidator: AcceptingMachineOwnerCredentialValidator()
       )
 
-      await assertThrowsErrorAsync(
-        try await server.submit(
-          packageDirectory: source,
-          authorization: try machineOwnerAuthorization()
-        )
-      ) {
-        XCTAssertEqual(
-          $0 as? ClosedEngineHelperError,
-          .unsupportedDevice("apple,j614s")
-        )
-      }
+      let result = try await server.submit(
+        packageDirectory: source,
+        authorization: try machineOwnerAuthorization()
+      )
       let executionCount = await executor.executionCount
-      XCTAssertEqual(executionCount, 0)
-      XCTAssertTrue(try importedEntries(in: fixture.destination).isEmpty)
+      XCTAssertEqual(result, fixture.transcript)
+      XCTAssertEqual(executionCount, 1)
     }
 
     func testTranscriptForSubstitutedPlanIsRejected() async throws {
