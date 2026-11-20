@@ -28,6 +28,8 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
+          # The app-pin step diffs the branch against its merge base with main.
+          fetch-depth: 0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
@@ -44,6 +46,27 @@ jobs:
           } | tee "$RUNNER_TEMP/installer-ci/toolchain.txt"
       - name: Run portable suite
         run: bash test/all 2>&1 | tee "$RUNNER_TEMP/installer-ci/portable.log"
+      # The app-pin check again, at CI time: the bump workflow runs it before
+      # the pin pull request opens, and this repeats it against the catalogs
+      # live at this run and the branch's own Engine/source-lock.json, since
+      # the catalogs can move in between. Only a branch that itself moves
+      # installer.latestVersion (against its merge base, so a branch behind
+      # main is judged on its own change) is an app pin; an engine pin's live
+      # catalogs legitimately lag until the next publish.
+      - name: Check an app pin against the published catalogs
+        if: github.ref != 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          git fetch -q origin "+refs/heads/main:refs/remotes/origin/main"
+          base=$(git merge-base HEAD origin/main)
+          latest() { python3 -c "import json,sys; print((json.load(sys.stdin).get('installer') or {}).get('latestVersion', ''))"; }
+          before=$(git show "$base:.github/mac-release-pipeline.json" | latest)
+          after=$(latest <.github/mac-release-pipeline.json)
+          if [[ $before == "$after" ]]; then
+            echo "::notice::installer.latestVersion is unchanged since the merge base; no app pin to check"
+            exit 0
+          fi
+          python3 -I scripts/pipeline_pins.py --check-published
       - name: Save portable evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
