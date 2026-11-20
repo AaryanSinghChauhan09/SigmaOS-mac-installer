@@ -253,7 +253,7 @@ AURORA_REPLACEMENTS = {
 
 # The names an image built before omarchy-pkgs imported asahi-alarm's tools
 # carries for them.
-LEGACY_NAMES = {"aurora-fwextract": "asahi-fwextract"}
+LEGACY_NAMES = {"aurora-scripts": "asahi-scripts", "aurora-fwextract": "asahi-fwextract"}
 
 
 def aurora_replaced(packages: dict[str, set[str]]) -> set[str]:

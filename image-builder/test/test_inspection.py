@@ -621,6 +621,17 @@ class InspectionTest(unittest.TestCase):
         (install / "omarchy-aarch64-apple.packages").symlink_to("omarchy-apple-silicon.packages")
         self.assertEqual(self.inspect()["apple_package_list"], "omarchy-apple-silicon.packages")
 
+    def test_apple_package_list_takes_the_lanes_tool_names(self):
+        install = self.root / "usr/share/omarchy/install"
+        (install / "omarchy-apple-silicon.packages").write_text("omarchy-mac\naurora-scripts\n")
+        self.assertFails("apple-packages", "names packages that are not installed: aurora-scripts$")
+        # A lane without the imports installs asahi-alarm's name for it.
+        entry = self.root / "var/lib/pacman/local/asahi-scripts-1-1"
+        entry.mkdir(parents=True)
+        (entry / "desc").write_text("%NAME%\nasahi-scripts\n\n%VERSION%\n1-1\n\n")
+        report = self.inspect()
+        self.assertEqual(report["checks"]["apple-packages"]["result"], "passed", report["checks"]["apple-packages"])
+
     def test_apple_package_list_prefers_upstreams_name(self):
         install = self.root / "usr/share/omarchy/install"
         (install / "omarchy-apple.packages").write_text("omarchy-mac\nnot-installed\n")

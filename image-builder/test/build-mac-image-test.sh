@@ -971,8 +971,15 @@ tool_db "$scratch/tools-rc" aurora-scripts-extra-1-1 omarchy-mac-0.2.3-2
 [[ $(selected_tools "$scratch/tools-rc") == "asahi-scripts asahi-fwextract | asahi-scripts asahi-scripts asahi-fwextract asahi-fwextract" ]] ||
   fail "a lane whose [omarchy] lacks the tools installs asahi-alarm's names: $(selected_tools "$scratch/tools-rc")"
 tool_db "$scratch/tools-half" aurora-fwextract-0.9.2-1
-[[ $(selected_tools "$scratch/tools-half") == "asahi-scripts aurora-fwextract | asahi-scripts asahi-scripts aurora-fwextract aurora-fwextract" ]] ||
-  fail "each tool is chosen on its own: $(selected_tools "$scratch/tools-half")"
+[[ $(selected_tools "$scratch/tools-half") == "asahi-scripts asahi-fwextract | asahi-scripts asahi-scripts asahi-fwextract asahi-fwextract" ]] ||
+  fail "the tools go as a pair: aurora-fwextract needs aurora-scripts, so half an import keeps asahi-alarm's: $(selected_tools "$scratch/tools-half")"
+# A database written without directory headers, only the desc members.
+mkdir -p "$scratch/tools-flat/omarchy" "$scratch/tools-flat/tree/aurora-scripts-20261023-1" "$scratch/tools-flat/tree/aurora-fwextract-0.9.2-1"
+: >"$scratch/tools-flat/tree/aurora-scripts-20261023-1/desc"
+: >"$scratch/tools-flat/tree/aurora-fwextract-0.9.2-1/desc"
+bsdtar -czf "$scratch/tools-flat/omarchy/omarchy.db" -C "$scratch/tools-flat/tree" aurora-scripts-20261023-1/desc aurora-fwextract-0.9.2-1/desc
+[[ $(selected_tools "$scratch/tools-flat") == "aurora-scripts aurora-fwextract | aurora-scripts aurora-scripts aurora-fwextract aurora-fwextract" ]] ||
+  fail "a database without directory headers still carries the tools: $(selected_tools "$scratch/tools-flat")"
 pass "the Apple tools install as aurora-* where the lane's [omarchy] carries them, else as asahi-*, in every request"
 
 runtime_template "$(sed '/^\[aur\]/,$d' <<<"$RUNTIME_TEMPLATE")"
@@ -1073,7 +1080,8 @@ if command -v pacman >/dev/null 2>&1; then
   boot_db omarchy \
     'aura|0.1.0.r20261023-1|%PROVIDES%\nm1n1=1.6.1.aurora19\nm1n1-aurora=1.6.1.aurora19\nm1n1-neo=1.6.1.aurora19\n\n%CONFLICTS%\nm1n1\nm1n1-aurora\nm1n1-neo\n\n' \
     'm1n1-neo|1.6.1.aurora16-1|%PROVIDES%\nm1n1=1.6.1.aurora16\n\n%CONFLICTS%\nm1n1\n\n' \
-    'aurora-scripts|20261023-1|%PROVIDES%\nasahi-scripts=20261023\n\n%CONFLICTS%\nasahi-scripts\n\n%REPLACES%\nasahi-scripts\n\n'
+    'aurora-scripts|20261023-1|%PROVIDES%\nasahi-scripts=20261023\n\n%CONFLICTS%\nasahi-scripts\n\n%REPLACES%\nasahi-scripts\n\n' \
+    'aurora-fwextract|0.9.2-1|%DEPENDS%\naurora-scripts\n\n%PROVIDES%\nasahi-fwextract=0.9.2\n\n'
   boot_db asahi-alarm 'm1n1|1.6.1-1|' 'uboot-asahi|2026.07.asahi2-1|' 'asahi-scripts|20260127.1-1|'
   {
     printf '[options]\nArchitecture = aarch64\nSigLevel = Never\n'
