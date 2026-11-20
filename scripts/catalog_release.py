@@ -10,7 +10,10 @@ as its own job, so the job that holds the catalog key does nothing but sign:
                   unsigned catalog-<channel>.json
   check-evidence  re-check a built catalog's payload digest against the
                   evidence record (the signing job runs it again)
-  sign            sign a catalog with the Ed25519 key in an environment
+  check-engine    refuse an rc or stable catalog whose engine is not the one
+                  Engine/source-lock.json pins, unless the owner allows that
+                  digest (edge is exempt; the signing job runs it)
+  sign          sign a catalog with the Ed25519 key in an environment
                   variable or file, wrap it in the channel envelope and verify
                   the result against the trust root
   verify-envelope verify a signed envelope against the trust root
@@ -94,6 +97,7 @@ MAXIMUM_PART_COUNT = 16
 MAXIMUM_CATALOG_BYTES = 1_048_576
 
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+ENGINE_DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 REVISION = re.compile(r"^[0-9a-f]{40}$")
 ASAHI_TAG = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+$")
 ENGINE_VERSION = re.compile(r"^v[0-9A-Za-z+._-]{1,127}$")
@@ -505,6 +509,55 @@ def build_catalog(
     if errors:
         raise Refusal("; ".join(errors))
     return catalog
+
+
+def catalog_engine_digest(catalog: dict) -> str:
+    models = catalog.get("models") if isinstance(catalog, dict) else None
+    if not isinstance(models, list) or not models:
+        raise Refusal("the catalog lists no models")
+    digests = {model.get("engineDigest") if isinstance(model, dict) else None for model in models}
+    if len(digests) != 1:
+        raise Refusal("the catalog's models pin different engines; a catalog pins exactly one engine")
+    digest = digests.pop()
+    if not isinstance(digest, str) or not ENGINE_DIGEST.fullmatch(digest):
+        raise Refusal(f"the catalog's engine digest is malformed: {digest}")
+    return digest
+
+
+def check_engine_pin(channel: str, catalog: dict, allowed: str | None) -> str:
+    """An rc or stable catalog runs the engine Engine/source-lock.json pins
+    (on main, in the signing job): the app installs with the catalog's engine,
+    not the one it bundles, so a catalog left on an older engine ships that
+    engine's bugs with every new app. ALLOWED, the owner's explicit
+    allow-engine-digest, admits one other digest: a rollback or a recorded
+    lane hold (docs/catalog-release.md, "Lane holds"). Edge is exempt."""
+    channel = check_signed_channel(channel)
+    if allowed and not ENGINE_DIGEST.fullmatch(allowed):
+        raise Refusal(f"allow-engine-digest must be sha256:<64 lowercase hex>, not {allowed}")
+    if channel not in RELEASE_CHANNELS:
+        if allowed:
+            raise Refusal(f"allow-engine-digest is for rc and stable; catalog-{channel} is not engine-gated")
+        return f"engine_gate=exempt channel={channel} engine={catalog_engine_digest(catalog)}"
+    digest = catalog_engine_digest(catalog)
+    try:
+        locked = json.loads(SOURCE_LOCK.read_text())["validation_artifact"]["sha256"]
+    except (OSError, ValueError, KeyError, TypeError):
+        locked = None
+    if not isinstance(locked, str) or not SHA256.fullmatch(locked):
+        raise Refusal(f"{SOURCE_LOCK.name} pins no readable validation_artifact.sha256")
+    pinned = f"sha256:{locked}"
+    if allowed:
+        if digest != allowed:
+            raise Refusal(f"catalog-{channel} pins engine {digest}, not the allowed {allowed}")
+        status = "held" if digest != pinned else "lock"
+        return f"engine_gate={status} channel={channel} engine={digest} lock={pinned} allowed={allowed}"
+    if digest != pinned:
+        raise Refusal(
+            f"catalog-{channel} pins engine {digest}, but Engine/source-lock.json pins {pinned}: regenerate the "
+            f"catalog with the locked engine, or, to keep this engine for an owner-approved rollback or lane hold "
+            f"(docs/catalog-release.md, \"Lane holds\"), pass allow-engine-digest={digest}"
+        )
+    return f"engine_gate=lock channel={channel} engine={digest} lock={pinned}"
 
 
 def catalog_bytes(catalog: dict) -> bytes:
@@ -1150,6 +1203,11 @@ def command_check_evidence(arguments) -> None:
     print(f"evidence=passed {digest}")
 
 
+def command_check_engine(arguments) -> None:
+    channel = arguments.catalog.name.removeprefix("catalog-").removesuffix(".json")
+    print(check_engine_pin(channel, load_json(arguments.catalog, "catalog"), arguments.allow_engine_digest or None))
+
+
 def command_sign(arguments) -> None:
     # Read (and drop from the environment) the key before anything else runs.
     seed = load_private_key(arguments.key_env, arguments.key_file)
@@ -1393,6 +1451,11 @@ def parse_arguments(argv: list[str]):
     evidence.add_argument("--catalog", type=Path, required=True)
     evidence.add_argument("--evidence", type=Path)
 
+    engine = commands.add_parser("check-engine")
+    engine.add_argument("--catalog", type=Path, required=True)
+    engine.add_argument("--allow-engine-digest", default="",
+                        help="sha256:<hex>, an owner-approved rc or stable engine other than the locked one")
+
     for name in ("sign", "public-key"):
         command = commands.add_parser(name)
         command.add_argument("--key-env")
@@ -1427,6 +1490,7 @@ def main(argv: list[str]) -> int:
     handler = {
         "prepare": command_prepare,
         "check-evidence": command_check_evidence,
+        "check-engine": command_check_engine,
         "promote": command_promote,
         "check-promotion": command_check_promotion,
         "sign": command_sign,

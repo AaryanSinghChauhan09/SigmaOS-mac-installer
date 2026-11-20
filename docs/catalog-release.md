@@ -74,6 +74,24 @@ The VM acceptance job (`mac-acceptance.yml`) writes and attests it; the upload (
 
 The app compiled from `Release/` reads `mac.omarchy.org/v1`, so it does not see the stopgap catalogs. Until ticket 13, `mac-app-release.yml` (`APP_CATALOG_HOST: stopgap`) therefore builds every app with a `release.json` from `scripts/make-release-descriptor --stopgap`, naming each channel's stopgap catalog and the trust root in `Release/`; the release guard accepts exactly those URLs besides the catalog base. Ticket 13 sets `APP_CATALOG_HOST: base`, and apps built before then keep reading the stopgap releases, so those must stay in place until such apps are retired.
 
+## Lane holds
+
+The app installs with the engine its channel's signed catalog pins (each model's `engineDigest`), not the engine it bundles. So an rc or stable catalog must pin the engine `Engine/source-lock.json` pins (`validation_artifact.sha256`), or a new app ships with an older engine's bugs: installer 2.3.16 carried the fix for "native Recovery app differs from its engine manifest" while catalog-rc and catalog-stable still pinned `v0.9.2-omarchy.20261022.31425f17fb9b`.
+
+`catalog_release.py check-engine` enforces it. The `prepare` jobs of `mac-catalog.yml` and `mac-promote.yml` run it and put its decision in the run summary before anyone is asked to approve; the signing job runs it again for both gates, before the key is read. Every model must pin one well-formed digest. For rc and stable it must be the lock's, read from the run's own checkout (the commit the run started from). Edge is exempt.
+
+A rollback or a deliberate hold keeps another engine only when the owner names its exact digest in the `allow-engine-digest` input (`sha256:<64 hex>`) of `mac-catalog.yml` or `mac-promote.yml`. The input is refused for edge, and refused unless the catalog pins exactly that digest. The summary then reads `engine_gate=held`, with the catalog's engine and the lock's. Promotion carries the source's engine, so a promoted stable catalog needs its own exception; the input never waives another gate, such as the refusal to promote a final tag built on rc. A lane held on an older engine is recorded below with its owner and reason, and the hold ends when the lane is re-signed on the locked engine with no `allow-engine-digest` (a normal rc or stable run does this). Delete its row once every host serving the lane reads back the new catalog.
+
+| Lane | Engine kept | Catalog (as observed 2026-11-20) | Owner | Since | Reason | Effect |
+| --- | --- | --- | --- | --- | --- | --- |
+| rc | `v0.9.2-omarchy.20261022.31425f17fb9b`, `sha256:5fea6b561e6fb82260f573bae099c70ba2e9998df56d38cf285987432320d4b5` (the lock pins `v0.9.2-omarchy.20261106.0f73bea79639`, `sha256:a60855716be5cea4f2113a368f784a5fe55a7034602f48fac8bb6e79f796fd7a`) | `catalog-rc.signed.json` sequence 1793801884 (2026-11-04T14:18:04Z), catalog sha256 `12e3bb17c93ca86d4eba4e4b842c6464cf80b7605f3651b921b613e5455bc8b5`; image `omarchy-mac-4.5.0-rc-r1-2026.11.04-f1738add15fc`; `installer.latestVersion` 2.3.14 | maralcbr | 2026-11-20 | Owner decision; stable carries the fix | rc installs can still fail at "Writing boot files" with "native Recovery app differs from its engine manifest" |
+
+While the rc hold stands, any rc re-sign that keeps this engine must pass `allow-engine-digest=sha256:5fea6b561e6fb82260f573bae099c70ba2e9998df56d38cf285987432320d4b5`; one on the locked engine passes no input and ends the hold.
+
+Outside the workflows, nothing runs the gate for you. Before a break-glass signing with `catalog-signing.swift sign-keychain`, copy the catalog to `catalog-<destination channel>.json` (the signed catalog names no channel) and run `python3 scripts/catalog_release.py check-engine --catalog catalog-<channel>.json` on `main`, with `--allow-engine-digest` only for a recorded hold. Before publishing by hand, check the envelope's catalog sha256 with `verify-envelope --expect-sha256`.
+
+Known gap: `main`'s lock can move after the owner approves a run, and the run still signs against the lock of the commit it started from; a re-run keeps that commit too, so a run started before this gate existed signs without it. Decline such approvals. The long-term fix is a per-lane record of the approved engine digest, checked again at publish time against current policy rather than the run's checkout.
+
 ## Running it
 
 After the workflow is on `main`:
