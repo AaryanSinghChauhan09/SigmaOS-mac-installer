@@ -1496,8 +1496,14 @@ monitor_free_aura() {
   done
   return 1
 }
+# aura's Mach-O Stage 1 is its fileset boot object, build/aura-boot.macho
+# (tools/macho_boot_object.py: build/aura.bin in __TEXT_EXEC, the segments
+# kmutil requires), which an aura package installs here. Its build/aura.macho,
+# also packaged as usr/share/aura/stage1/aura.macho, is the linker's Mach-O for
+# chainloading: no __TEXT or __TEXT_EXEC, so neither kmutil nor the engine
+# takes it as a boot object.
 stage_confined_boot_payloads() {
-  local stage1="$target/usr/share/aura/stage1/aura.macho"
+  local stage1="$target/usr/share/aura/stage1/aura-boot.macho"
   local stage2="$target/boot/efi/m1n1/boot.bin"
   [[ -e $stage1 || -L $stage1 ]] || return 0
   monitor_free_aura || return 0

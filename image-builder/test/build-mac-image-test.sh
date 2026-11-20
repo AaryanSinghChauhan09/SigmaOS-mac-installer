@@ -1206,7 +1206,8 @@ pass "a set without a boot loader record (rc, stable, candidate sets) keeps m1n1
   printf 'assembled Stage 2' >"$target/boot/efi/m1n1/boot.bin"
   stage_confined_boot_payloads
   [[ ! -e $target/boot/efi/aurora/stage1.macho && ! -e $target/boot/efi/m1n1/boot-ctxr.bin ]] || exit 1
-  printf 'aura Mach-O Stage 1' >"$target/usr/share/aura/stage1/aura.macho"
+  printf 'aura linker Mach-O' >"$target/usr/share/aura/stage1/aura.macho"
+  printf 'aura Mach-O boot object' >"$target/usr/share/aura/stage1/aura-boot.macho"
   stage_confined_boot_payloads
   [[ ! -e $target/boot/efi/aurora/stage1.macho && ! -e $target/boot/efi/m1n1/boot-ctxr.bin ]] || exit 1
   if command -v vercmp >/dev/null 2>&1; then
@@ -1224,14 +1225,14 @@ pass "a set without a boot loader record (rc, stable, candidate sets) keeps m1n1
   fi
   : >"$target/usr/share/aura/monitor-free"
   stage_confined_boot_payloads
-  cmp "$target/usr/share/aura/stage1/aura.macho" "$target/boot/efi/aurora/stage1.macho" || exit 1
+  cmp "$target/usr/share/aura/stage1/aura-boot.macho" "$target/boot/efi/aurora/stage1.macho" || exit 1
   cmp "$target/boot/efi/m1n1/boot.bin" "$target/boot/efi/m1n1/boot-ctxr.bin" || exit 1
   truncate -s $(( (16 << 20) + 1 )) "$target/boot/efi/m1n1/boot.bin"
   if (fail() { builder_fail "$@"; }; stage_confined_boot_payloads) >/dev/null 2>&1; then
     exit 1
   fi
 ) || fail "the M4 boot payloads are missing, mismatched or oversized"
-pass "a monitor-free aura image (marker or version) stages the Mach-O Stage 1 and confined Stage 2; others stage neither; over 16 MiB is refused"
+pass "a monitor-free aura image (marker or version) stages aura-boot.macho, never the linker aura.macho, and the confined Stage 2; others stage neither; over 16 MiB is refused"
 
 # Base runtime requests must resolve to the same reviewed stack as Apple requests.
 (

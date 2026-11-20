@@ -312,10 +312,19 @@ class ChannelBuildDirectoryTest(unittest.TestCase):
                 with self.assertRaisesRegex(check.CheckError, "missing members"):
                     check.check_payload("edge", self.out / NAME, self.out / "installer_data.json")
 
+    @staticmethod
+    def boot_object(subtype=0xC0000002, names=("__TEXT", "__TEXT_EXEC", "__PRELINK_INFO", "__LINKEDIT"), sized=()):
+        """An aura-shaped fileset boot object (tools/macho_boot_object.py's segments), or, with other
+        NAMES, a linker-style Mach-O like aura's build/aura.macho (_HDR, TEXT, RODA, DATA, PYLD).
+        Segments in SIZED get a nonzero vmsize and filesize."""
+        commands = b"".join(struct.pack("<II16sQQQQiiII", 0x19, 72, name.encode(), 0, 0x4000 * (name in sized), 0,
+                                        0x4000 * (name in sized), 5, 5, 0, 0)
+                            for name in names)
+        header = struct.pack("<IIIIIIII", 0xFEEDFACF, 0x0100000C, subtype, 12, len(names), len(commands), 0, 0)
+        return header + commands + fixtures.raw_stage1()
+
     def confined_payload(self, **changes):
-        macho = bytearray(64)
-        struct.pack_into("<IIII", macho, 0, 0xFEEDFACF, 0x0100000C, 0, 12)
-        extra = {"esp/aurora/stage1.macho": bytes(macho) + fixtures.raw_stage1(),
+        extra = {"esp/aurora/stage1.macho": self.boot_object(),
                  "esp/m1n1/boot-ctxr.bin": b"m1n1" * 64}
         extra.update(changes)
         fixtures.write_payload(self.out / NAME, check.BOOT_UUID, check.ROOT_UUID, recovery_app=self.recovery,
@@ -327,6 +336,15 @@ class ChannelBuildDirectoryTest(unittest.TestCase):
         check.check_payload("edge", self.out / NAME, self.out / "installer_data.json")
         self.confined_payload(**{"esp/m1n1/boot-ctxr-j713.bin": b"m1n1 j713"})
         check.check_payload("edge", self.out / NAME, self.out / "installer_data.json")
+        # aura writes CPU_SUBTYPE_ARM64E with kernel capability bits; a plain arm64 object passes too.
+        for subtype in (0xC0000002, 0x2, 0):
+            with self.subTest(subtype=hex(subtype)):
+                self.confined_payload(**{"esp/aurora/stage1.macho": self.boot_object(subtype)})
+                check.check_payload("edge", self.out / NAME, self.out / "installer_data.json")
+        # An empty __TEXT_BOOT_EXEC gives kcbz 0, as the engine allows.
+        self.confined_payload(**{"esp/aurora/stage1.macho": self.boot_object(
+            names=("__TEXT", "__TEXT_EXEC", "__TEXT_BOOT_EXEC", "__PRELINK_INFO", "__LINKEDIT"))})
+        check.check_payload("edge", self.out / NAME, self.out / "installer_data.json")
 
     def test_the_m4_boot_payloads_are_refused_unless_matched_and_well_formed(self):
         self.build()
@@ -334,7 +352,13 @@ class ChannelBuildDirectoryTest(unittest.TestCase):
             "need esp/aurora/stage1.macho": {"esp/aurora/stage1.macho": None},
             "needs esp/m1n1/boot-ctxr.bin": {"esp/m1n1/boot-ctxr.bin": None},
             "not an Arm64 fileset": {"esp/aurora/stage1.macho": fixtures.raw_stage1()},
+            # aura edgeB2's packaged usr/share/aura/stage1/aura.macho: a fileset header, linker segments.
+            "lacks __TEXT, __TEXT_EXEC, __PRELINK_INFO, __LINKEDIT": {
+                "esp/aurora/stage1.macho": self.boot_object(0x2, ("_HDR", "TEXT", "RODA", "DATA", "PYLD"))},
             "16 MiB slot": {"esp/m1n1/boot-ctxr.bin": bytes((16 << 20) + 1)},
+            "__TEXT_BOOT_EXEC, so iBoot would start SPTM": {"esp/aurora/stage1.macho": self.boot_object(
+                names=("__TEXT", "__TEXT_EXEC", "__TEXT_BOOT_EXEC", "__PRELINK_INFO", "__LINKEDIT"),
+                sized=("__TEXT_BOOT_EXEC",))},
         }
         for message, changes in cases.items():
             with self.subTest(message):
