@@ -47,6 +47,10 @@ on:
         description: Channel to publish, edge, rc or stable, the lane the image was built for
         type: string
         default: edge
+      allow-engine-digest:
+        description: rc or stable only - sha256:<hex> of an engine other than Engine/source-lock.json's to keep (an owner-approved rollback or lane hold, docs/catalog-release.md)
+        type: string
+        default: ''
       dry-run:
         description: Sign and publish to a scratch directory only
         type: boolean
@@ -104,6 +108,10 @@ on:
         type: choice
         options: [edge, rc, stable]
         default: edge
+      allow-engine-digest:
+        description: rc or stable only - sha256:<hex> of an engine other than Engine/source-lock.json's to keep (an owner-approved rollback or lane hold, docs/catalog-release.md)
+        type: string
+        default: ''
       dry-run:
         description: Sign and publish to a scratch directory only
         type: boolean
@@ -187,6 +195,25 @@ jobs:
             echo '```'
           } >>"$GITHUB_STEP_SUMMARY"
 
+      - name: Check the engine
+        env:
+          ALLOW_ENGINE_DIGEST: ${{ inputs.allow-engine-digest }}
+          CATALOG_SHA256: ${{ steps.build.outputs.catalog-sha256 }}
+        run: |
+          set -euo pipefail
+          inputs=$RUNNER_TEMP/catalog-inputs
+          # rc and stable run the locked engine unless the owner allows this
+          # exact digest; shown here, before anyone is asked to approve.
+          gate=$(python3 scripts/catalog_release.py check-engine --catalog "$inputs/catalog-$(<"$inputs/channel").json" \
+            --allow-engine-digest "$ALLOW_ENGINE_DIGEST")
+          echo "$gate"
+          {
+            echo "### Engine gate"
+            echo "\`$gate\`"
+            echo
+            echo "catalog sha256 \`$CATALOG_SHA256\`, run commit \`$GITHUB_SHA\`, allow-engine-digest \`${ALLOW_ENGINE_DIGEST:-none}\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: catalog-unsigned
@@ -204,6 +231,7 @@ jobs:
       channel: ${{ inputs.channel }}
       catalog-sha256: ${{ needs.prepare.outputs.catalog-sha256 }}
       gate: evidence
+      allow-engine-digest: ${{ inputs.allow-engine-digest }}
       dry-run: ${{ inputs.dry-run }}
       catalog-hosts: ${{ inputs.catalog-hosts }}
     secrets: inherit
