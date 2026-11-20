@@ -246,6 +246,8 @@ AURORA_REPLACEMENTS = {
     "aurora-bless": {"asahi-bless"},
     "aurora-audio": {"asahi-audio"},
     "alsa-ucm-conf-aurora": {"alsa-ucm-conf-asahi"},
+    "aurora-scripts": {"asahi-scripts"},
+    "aurora-fwextract": {"asahi-fwextract"},
 }
 
 

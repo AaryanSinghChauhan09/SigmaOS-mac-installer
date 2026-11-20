@@ -909,7 +909,71 @@ runtime_template "$RUNTIME_TEMPLATE"
   [[ ${repository_order[*]} == "omarchy asahi-alarm core extra alarm aur" ]] ||
     fail "a candidate set keeps the pinned order: ${repository_order[*]}"
 )
-pass "a channel image searches its runtime's Apple template's order; a candidate set searches [omarchy] first too"
+pass "a channel image searches its runtime's Apple template's order; a candidate set without a template keeps the pinned order"
+
+# A candidate set builds with the order of the template its image installs.
+candidate_order() { # candidate_order <dir>: the order read_repository_order gives that candidate set
+  (candidates=$1; fail() { builder_fail "$@"; }; read_repository_order; echo "${repository_order[*]}")
+}
+template_archive() { # template_archive <set dir> <archive> <path:sections>...: a candidate archive shipping pacman templates
+  local set=$1 archive=$2 tree=$1/tree-$2 entry path sections section
+  shift 2
+  mkdir -p "$tree"
+  for entry in "$@"; do
+    path=${entry%%:*} sections=${entry#*:}
+    mkdir -p "$tree/${path%/*}"
+    for section in $sections; do printf '[%s]\nServer = https://example.invalid\n\n' "$section"; done >"$tree/$path"
+  done
+  (cd "$tree" && bsdtar -czf "$set/$archive" -- *)
+}
+order_set=$scratch/candidate-order
+mkdir -p "$order_set/historical" "$order_set/current" "$order_set/both" "$order_set/none"
+printf '{"packages":[{"name":"omarchy-mac","filename":"omarchy-mac.pkg"}]}\n' >"$order_set/historical/import.json"
+template_archive "$order_set/historical" omarchy-mac.pkg "usr/share/omarchy-mac/pacman/pacman-edge.conf:options asahi-alarm core extra alarm omarchy"
+[[ $(candidate_order "$order_set/historical") == "asahi-alarm core extra alarm omarchy aur" ]] ||
+  fail "an [omarchy]-last runtime template builds [omarchy] last: $(candidate_order "$order_set/historical")"
+printf '{"packages":[{"name":"omarchy-settings","filename":"settings.pkg"}]}\n' >"$order_set/current/import.json"
+template_archive "$order_set/current" settings.pkg \
+  "usr/share/omarchy/default/pacman/aarch64-apple/pacman-edge.conf:options omarchy omarchy-aarch64 asahi-alarm core extra alarm aur"
+[[ $(candidate_order "$order_set/current") == "omarchy asahi-alarm core extra alarm aur" ]] ||
+  fail "an [omarchy]-first template builds [omarchy] first, ignoring unpinned names: $(candidate_order "$order_set/current")"
+printf '{"packages":[{"name":"omarchy","filename":"omarchy.pkg"},{"name":"omarchy-settings","filename":"settings.pkg"}]}\n' >"$order_set/both/import.json"
+template_archive "$order_set/both" omarchy.pkg "usr/share/omarchy/default/pacman/apple-silicon/pacman-edge.conf:asahi-alarm core extra alarm aur omarchy"
+template_archive "$order_set/both" settings.pkg "usr/share/omarchy/default/pacman/aarch64-apple/pacman-edge.conf:omarchy asahi-alarm core extra alarm aur"
+[[ $(candidate_order "$order_set/both") == "omarchy asahi-alarm core extra alarm aur" ]] ||
+  fail "the aarch64-apple template wins over the legacy apple-silicon one, as write_installed_config's lookup: $(candidate_order "$order_set/both")"
+printf '{"packages":[{"name":"omarchy","filename":"omarchy.pkg"}]}\n' >"$order_set/none/import.json"
+template_archive "$order_set/none" omarchy.pkg "usr/share/omarchy/default/pacman/aarch64-apple/pacman-stable.conf:aur omarchy"
+[[ $(candidate_order "$order_set/none") == "omarchy asahi-alarm core extra alarm aur" ]] ||
+  fail "a set with no template for its channel keeps the pinned order: $(candidate_order "$order_set/none")"
+pass "a candidate set builds with its runtime's installed template order, legacy paths included, else the pinned order"
+
+# The Apple tools come from [omarchy] under their aurora names where the lane's
+# pinned database carries them, else under asahi-alarm's (rc and stable before the imports).
+tool_db() { # tool_db <dir> <entry>...: a pinned omarchy.db holding these name-version-release entries
+  local dir=$1 tree=$1/tree entry
+  shift
+  mkdir -p "$tree" "$dir/omarchy"
+  for entry in "$@"; do
+    mkdir -p "$tree/$entry" && : >"$tree/$entry/desc"
+  done
+  (cd "$tree" && bsdtar -czf "$dir/omarchy/omarchy.db" -- *)
+}
+selected_tools() { # selected_tools <repos>: the tool names select_platform_tools and qualified() give for that lane
+  (repos=$1 candidates=$order_set/none; fail() { builder_fail "$@"; }
+    select_platform_tools
+    echo "${PLATFORM_PACKAGES[*]: -2} | $(qualified asahi-scripts aurora-scripts asahi-fwextract aurora-fwextract | paste -sd' ' -)")
+}
+tool_db "$scratch/tools-edge" aurora-scripts-20261023-1 aurora-fwextract-0.9.2-1 lzfse-1.0-2
+[[ $(selected_tools "$scratch/tools-edge") == "aurora-scripts aurora-fwextract | aurora-scripts aurora-scripts aurora-fwextract aurora-fwextract" ]] ||
+  fail "a lane whose [omarchy] carries the tools installs the aurora names: $(selected_tools "$scratch/tools-edge")"
+tool_db "$scratch/tools-rc" aurora-scripts-extra-1-1 omarchy-mac-0.2.3-2
+[[ $(selected_tools "$scratch/tools-rc") == "asahi-scripts asahi-fwextract | asahi-scripts asahi-scripts asahi-fwextract asahi-fwextract" ]] ||
+  fail "a lane whose [omarchy] lacks the tools installs asahi-alarm's names: $(selected_tools "$scratch/tools-rc")"
+tool_db "$scratch/tools-half" aurora-fwextract-0.9.2-1
+[[ $(selected_tools "$scratch/tools-half") == "asahi-scripts aurora-fwextract | asahi-scripts asahi-scripts aurora-fwextract aurora-fwextract" ]] ||
+  fail "each tool is chosen on its own: $(selected_tools "$scratch/tools-half")"
+pass "the Apple tools install as aurora-* where the lane's [omarchy] carries them, else as asahi-*, in every request"
 
 runtime_template "$(sed '/^\[aur\]/,$d' <<<"$RUNTIME_TEMPLATE")"
 (
@@ -943,7 +1007,7 @@ refused_order "the runtime ships no Apple pacman template for the channel" "a ru
 runtime_template "$RUNTIME_TEMPLATE"
 pass "a runtime template that names other repositories than the pinned ones, or none, stops the build"
 
-# The resolution itself, where pacman exists (the Arch Linux ARM source-check
+# The resolution itself, where pacman exists (CI runs it in an Arch Linux
 # container): a package both [omarchy] and Arch Linux ARM carry comes from
 # [omarchy] in a channel image, as on the installed Mac.
 if command -v pacman >/dev/null 2>&1; then
@@ -968,14 +1032,16 @@ if command -v pacman >/dev/null 2>&1; then
     field() { sed -n "s/^$1=//p" "$channel/inputs"; }
     fail() { builder_fail "$@"; }
     read_repository_order
-    render_config "$scratch/repos" "$scratch/cache" | sed 's/^Architecture = .*/Architecture = auto/' >"$scratch/channel.conf"
+    render_config "$scratch/repos" "$scratch/cache" >"$scratch/channel.conf"
     [[ $(resolved "$scratch/channel.conf") == "omarchy 0.52.0-1" ]] ||
       fail "a channel image takes hyprland from [omarchy]: $(resolved "$scratch/channel.conf")"
   )
-  render_config "$scratch/repos" "$scratch/cache" | sed 's/^Architecture = .*/Architecture = auto/' >"$scratch/candidate.conf"
+  render_config "$scratch/repos" "$scratch/cache" >"$scratch/candidate.conf"
   [[ $(resolved "$scratch/candidate.conf") == "omarchy 0.52.0-1" ]] ||
     fail "a candidate set takes hyprland from [omarchy] too: $(resolved "$scratch/candidate.conf")"
   pass "pacman takes a package both [omarchy] and Arch Linux ARM carry from [omarchy], in a channel image and a candidate set"
+elif [[ ${IMAGE_BUILDER_REQUIRE_PACMAN:-} == 1 ]]; then
+  fail "pacman resolution of the repository order needs pacman (IMAGE_BUILDER_REQUIRE_PACMAN=1)"
 else
   echo "skip - pacman resolution of the repository order (no pacman on this host)"
 fi
@@ -988,6 +1054,7 @@ if command -v pacman >/dev/null 2>&1; then
   boot_db() {
     local repository=$1 tree=$scratch/boot-db-$1 entry name version fields
     shift
+    rm -rf "$tree"
     mkdir -p "$tree" "$scratch/boot-dbpath/sync"
     for entry in "$@"; do
       IFS='|' read -r name version fields <<<"$entry"
@@ -1009,7 +1076,7 @@ if command -v pacman >/dev/null 2>&1; then
     'aurora-scripts|20261023-1|%PROVIDES%\nasahi-scripts=20261023\n\n%CONFLICTS%\nasahi-scripts\n\n%REPLACES%\nasahi-scripts\n\n'
   boot_db asahi-alarm 'm1n1|1.6.1-1|' 'uboot-asahi|2026.07.asahi2-1|' 'asahi-scripts|20260127.1-1|'
   {
-    printf '[options]\nArchitecture = auto\nSigLevel = Never\n'
+    printf '[options]\nArchitecture = aarch64\nSigLevel = Never\n'
     for repository in omarchy-candidates omarchy asahi-alarm; do
       printf '[%s]\nServer = file:///nonexistent/%s\n' "$repository" "$repository"
     done
@@ -1017,15 +1084,31 @@ if command -v pacman >/dev/null 2>&1; then
   boot_resolved() {
     pacman --config "$scratch/boot.conf" --dbpath "$scratch/boot-dbpath" --noconfirm -Sp --print-format '%r %n' "$@" 2>&1 | sort
   }
-  boot_set=(omarchy-candidates/m1n1-aurora omarchy-candidates/uboot-aurora omarchy-candidates/omarchy-mac-boot aurora-scripts)
-  expected=$'omarchy aurora-scripts\nomarchy-candidates m1n1-aurora\nomarchy-candidates omarchy-mac-boot\nomarchy-candidates uboot-aurora'
-  [[ $(boot_resolved "${boot_set[@]}") == "$expected" ]] ||
-    fail "the boot transaction resolves to m1n1-aurora, uboot-aurora, aurora-scripts and nothing they replace: $(boot_resolved "${boot_set[@]}")"
+  # The boot set with the scripts tool select_platform_tools picks for the lane's [omarchy].
+  boot_set() {
+    (repos=$scratch/boot-repos; mkdir -p "$repos/omarchy"; cp "$scratch/boot-dbpath/sync/omarchy.db" "$repos/omarchy/"
+      fail() { builder_fail "$@"; }; select_platform_tools
+      printf '%s\n' omarchy-candidates/m1n1-aurora omarchy-candidates/uboot-aurora omarchy-candidates/omarchy-mac-boot "$(platform_tool aurora-scripts)")
+  }
+  boot_check() { # boot_check <expected scripts line> <what>
+    local set
+    mapfile -t set < <(boot_set)
+    [[ $(boot_resolved "${set[@]}") == "$1"$'\nomarchy-candidates m1n1-aurora\nomarchy-candidates omarchy-mac-boot\nomarchy-candidates uboot-aurora' ]] ||
+      fail "$2: $(boot_resolved "${set[@]}")"
+  }
+  boot_check "omarchy aurora-scripts" "an edge-like lane's boot transaction takes aurora-scripts from [omarchy] and nothing it replaces"
   # Without uboot-aurora in the same transaction the virtual dependency takes the
   # stock uboot-asahi, which the pre-check refuses.
   grep -Fxq 'asahi-alarm uboot-asahi' <<<"$(boot_resolved omarchy-candidates/m1n1-aurora)" ||
     fail "m1n1-aurora alone pulls the stock uboot-asahi: $(boot_resolved omarchy-candidates/m1n1-aurora)"
-  pass "pacman resolves the boot set to m1n1-aurora, uboot-aurora and aurora-scripts, never aura, m1n1-neo, m1n1, uboot-asahi or asahi-scripts"
+  # An rc-like lane, whose [omarchy] does not carry aurora-scripts yet, takes asahi-alarm's.
+  boot_db omarchy \
+    'aura|0.1.0.r20261023-1|%PROVIDES%\nm1n1=1.6.1.aurora19\nm1n1-aurora=1.6.1.aurora19\nm1n1-neo=1.6.1.aurora19\n\n%CONFLICTS%\nm1n1\nm1n1-aurora\nm1n1-neo\n\n' \
+    'm1n1-neo|1.6.1.aurora16-1|%PROVIDES%\nm1n1=1.6.1.aurora16\n\n%CONFLICTS%\nm1n1\n\n'
+  boot_check "asahi-alarm asahi-scripts" "an rc-like lane's boot transaction takes asahi-alarm's asahi-scripts"
+  pass "pacman resolves the boot set to m1n1-aurora, uboot-aurora and the lane's scripts tool (aurora-scripts from [omarchy], else asahi-alarm's), never aura, m1n1-neo, m1n1 or uboot-asahi"
+elif [[ ${IMAGE_BUILDER_REQUIRE_PACMAN:-} == 1 ]]; then
+  fail "pacman resolution of the boot transaction needs pacman (IMAGE_BUILDER_REQUIRE_PACMAN=1)"
 else
   echo "skip - pacman resolution of the boot transaction (no pacman on this host)"
 fi
