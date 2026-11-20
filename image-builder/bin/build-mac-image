@@ -1473,12 +1473,16 @@ stage_board_boot_payloads() {
 # (the engine's confined_stage1). Only an image whose Stage 2 is aura carries
 # them: aura ships the Mach-O beside its raw Stage 1, and the confined Stage 2 is
 # the same assembled bundle as m1n1/boot.bin, inside the 16 MiB slot aura keeps
-# for it. Any other image carries neither, and the engine refuses an M4 on it.
+# for it. Only a monitor-free aura (/usr/share/aura/monitor-free, which needs a
+# linux-aurora built with CONFIG_ARM64_CTXR_EXECMEM) runs the kernel in that
+# window, as aurora-silicon/alarm-aurora's prepare-ctxr-stage2.py requires. Any
+# other image carries neither file, and the engine refuses an M4 on it.
 CONFINED_STAGE2_MAX_BYTES=$(( 16 << 20 ))
 stage_confined_boot_payloads() {
   local stage1="$target/usr/share/aura/stage1/aura.macho"
   local stage2="$target/boot/efi/m1n1/boot.bin"
   [[ -e $stage1 || -L $stage1 ]] || return 0
+  [[ -f $target/usr/share/aura/monitor-free ]] || return 0
   [[ -s $stage1 && ! -L $stage1 && -s $stage2 && ! -L $stage2 ]] ||
     fail "the image lacks matched aura Mach-O Stage 1 and Stage 2 payloads for M4 and later Macs"
   (( $(wc -c <"$stage2") <= CONFINED_STAGE2_MAX_BYTES )) ||
