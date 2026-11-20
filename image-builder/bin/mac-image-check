@@ -229,6 +229,33 @@ def check_plaintext_root(header: bytes, where: str) -> None:
     check_root_superblock(header, where)
 
 
+MACHO_STAGE1 = "esp/aurora/stage1.macho"
+CONFINED_STAGE2 = re.compile(r"esp/m1n1/boot-ctxr(?:-[jk][0-9]+[a-z]*)?\.bin")
+CONFINED_STAGE2_MAX_BYTES = 16 << 20
+
+
+def check_confined_boot_payloads(archive: zipfile.ZipFile, members: dict) -> None:
+    """The engine's execute-window contract (confined_stage1): aura's Mach-O Stage 1
+    and the confined Stage 2 it loads come together or not at all; the Stage 1 is a
+    fileset boot object with one configuration block, and each Stage 2 fits the
+    16 MiB slot aura keeps for it. Ported from aurora-installer 7be5339
+    (assemble-distribution-payload.py check_confined_stage2), MIT."""
+    confined = sorted(name for name in members if CONFINED_STAGE2.fullmatch(name))
+    if not confined and MACHO_STAGE1 not in members:
+        return
+    require(MACHO_STAGE1 in members, "boot-ctxr files need esp/aurora/stage1.macho, the Stage 1 that loads them")
+    require(confined, "esp/aurora/stage1.macho needs esp/m1n1/boot-ctxr.bin, the Stage 2 it loads")
+    stage1 = archive.read(MACHO_STAGE1)
+    require(len(stage1) >= 32 and struct.unpack_from("<III", stage1, 0) == (0xFEEDFACF, 0x0100000C, 0)
+            and struct.unpack_from("<I", stage1, 12)[0] == 12,
+            "the Mach-O Stage 1 is not an Arm64 fileset boot object")
+    require(stage1.count(b"AURORA-S1-CFG01\0") == 1, "the Mach-O Stage 1 is missing its configuration block")
+    for member in confined:
+        size = members[member].file_size
+        require(0 < size <= CONFINED_STAGE2_MAX_BYTES,
+                f"{member} is {size} bytes, not 1 byte to the 16 MiB slot aura keeps for it")
+
+
 def check_payload(lane: str, package: Path, installer_data: Path, profile: str = "release",
                   recovery_digest: str | None = None) -> dict[str, str]:
     check_profile(lane, profile)
@@ -308,6 +335,7 @@ def check_payload(lane: str, package: Path, installer_data: Path, profile: str =
                 "the J700 Stage 1 has an invalid configuration block")
         require(archive.read("esp/m1n1/boot-j700.bin") == archive.read("esp/m1n1/boot.bin"),
                 "the J700 Stage 2 differs from the common bundle")
+        check_confined_boot_payloads(archive, members)
 
         keep = {
             "boot.img": 0x488,

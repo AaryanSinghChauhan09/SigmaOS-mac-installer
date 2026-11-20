@@ -6,6 +6,7 @@ import importlib.util
 import json
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -309,6 +310,36 @@ class ChannelBuildDirectoryTest(unittest.TestCase):
                 fixtures.write_payload(self.out / NAME, check.BOOT_UUID, check.ROOT_UUID, omit=(member,),
                                        recovery_app=self.recovery)
                 with self.assertRaisesRegex(check.CheckError, "missing members"):
+                    check.check_payload("edge", self.out / NAME, self.out / "installer_data.json")
+
+    def confined_payload(self, **changes):
+        macho = bytearray(64)
+        struct.pack_into("<IIII", macho, 0, 0xFEEDFACF, 0x0100000C, 0, 12)
+        extra = {"esp/aurora/stage1.macho": bytes(macho) + fixtures.raw_stage1(),
+                 "esp/m1n1/boot-ctxr.bin": b"m1n1" * 64}
+        extra.update(changes)
+        fixtures.write_payload(self.out / NAME, check.BOOT_UUID, check.ROOT_UUID, recovery_app=self.recovery,
+                               extra={name: data for name, data in extra.items() if data is not None})
+
+    def test_a_payload_may_carry_the_m4_macho_stage1_and_confined_stage2(self):
+        self.build()
+        self.confined_payload()
+        check.check_payload("edge", self.out / NAME, self.out / "installer_data.json")
+        self.confined_payload(**{"esp/m1n1/boot-ctxr-j713.bin": b"m1n1 j713"})
+        check.check_payload("edge", self.out / NAME, self.out / "installer_data.json")
+
+    def test_the_m4_boot_payloads_are_refused_unless_matched_and_well_formed(self):
+        self.build()
+        cases = {
+            "need esp/aurora/stage1.macho": {"esp/aurora/stage1.macho": None},
+            "needs esp/m1n1/boot-ctxr.bin": {"esp/m1n1/boot-ctxr.bin": None},
+            "not an Arm64 fileset": {"esp/aurora/stage1.macho": fixtures.raw_stage1()},
+            "16 MiB slot": {"esp/m1n1/boot-ctxr.bin": bytes((16 << 20) + 1)},
+        }
+        for message, changes in cases.items():
+            with self.subTest(message):
+                self.confined_payload(**changes)
+                with self.assertRaisesRegex(check.CheckError, message):
                     check.check_payload("edge", self.out / NAME, self.out / "installer_data.json")
 
     def test_the_payload_passes_the_engine_contract(self):

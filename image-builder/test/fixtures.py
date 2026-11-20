@@ -402,7 +402,8 @@ def payload_pe(extra: bytes) -> bytes:
 
 
 def write_payload(zip_path: Path, boot_uuid: str, root_uuid: str, omit: tuple[str, ...] = (),
-                  empty: tuple[str, ...] = (), grow: dict[str, int] | None = None, recovery_app: Path | None = None) -> None:
+                  empty: tuple[str, ...] = (), grow: dict[str, int] | None = None, recovery_app: Path | None = None,
+                  extra: dict[str, bytes] | None = None) -> None:
     """The payload zip build-mac-image packages, with small stand-ins for its images. OMIT drops members,
     EMPTY truncates them and GROW appends that many zero bytes to each member it names."""
     with tempfile.TemporaryDirectory() as temporary:
@@ -430,6 +431,9 @@ def write_payload(zip_path: Path, boot_uuid: str, root_uuid: str, omit: tuple[st
         shutil.copy(payload / "esp/m1n1/boot.bin", payload / "esp/m1n1/boot-j700.bin")
         if recovery_app is not None:
             shutil.copytree(recovery_app, payload / "esp/aurora/recovery")
+        for member, data in (extra or {}).items():
+            (payload / member).parent.mkdir(parents=True, exist_ok=True)
+            (payload / member).write_bytes(data)
         for member in omit:
             (payload / member).unlink()
         for member in empty:

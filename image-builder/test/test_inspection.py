@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Inspection fails an image whose boot components are missing or differ from the set."""
 import hashlib
+import json
 import os
 import re
 from pathlib import Path
@@ -1376,6 +1377,26 @@ class TestImagePinTest(unittest.TestCase):
     def test_template_needs_one_options_section(self):
         with self.assertRaisesRegex(ValueError, "options"):
             fixtures.test_image_pin.render(b"[core]\n", ["omarchy"])
+
+
+
+class DeviceTreeCoverageTest(unittest.TestCase):
+    """Device trees are per board: the trust policy names one for every Mac the
+    catalogs may offer (scripts/supported-models.json, untested ones included)
+    and none beyond them. A board joins both together, so the image can never
+    admit a Mac its kernel cannot describe, or carry a tree no catalog offers."""
+
+    def test_every_supported_mac_has_exactly_one_policy_device_tree(self):
+        manifest = json.loads((fixtures.ROOT.parent / "scripts/supported-models.json").read_text())
+        boards = {identifier.removeprefix("apple,") for identifier in manifest["supported"]}
+        trees = {}
+        for tree in fixtures.POLICY["device_trees"]:
+            found = re.fullmatch(r"t([0-9a-f]{4})-([jk][0-9]+[a-z]*)", tree)
+            self.assertIsNotNone(found, f"{tree} is not t<chip>-<board>")
+            self.assertNotIn(found[2], trees, f"{found[2]} has two device trees")
+            trees[found[2]] = tree
+        self.assertEqual(sorted(set(trees) - boards), [], "device trees for Macs no catalog offers")
+        self.assertEqual(sorted(boards - set(trees)), [], "supported Macs without a device tree")
 
 
 if __name__ == "__main__":
