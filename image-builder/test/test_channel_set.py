@@ -120,8 +120,8 @@ class ChannelSetTest(unittest.TestCase):
 
     def test_an_edge_set_pairing_a_7_3_or_newer_kernel_with_m1n1_aurora_is_refused(self):
         # omacom/omarchy-pkgs#3025 moves edge to 7.3 behind aura; m1n1-aurora with it is not qualified.
-        for kernel in ("7.3-1", "7.3.aurora1-1", "7.3.0-1", "7.3.0.aurora0testedgeC-1", "7.3.2.aurora1-1",
-                       "7.4.1.aurora2-1", "1:7.3.0.aurora1-1"):
+        for kernel in ("7.3-1", "7.3rc1-1", "7.3.aurora1-1", "7.3.0-1", "7.3.0.aurora0testedgeC-1",
+                       "7.3.2.aurora1-1", "7.4.1.aurora2-1", "1:7.3.0.aurora1-1"):
             with self.subTest(kernel=kernel):
                 self.work = Path(tempfile.mkdtemp(dir=self.base))
                 database, sha256 = self.snapshot(versions={"linux-aurora": kernel, "linux-aurora-headers": kernel})
@@ -157,10 +157,13 @@ class ChannelSetTest(unittest.TestCase):
         def chosen(kernel, loader="m1n1-aurora"):
             return [("linux-aurora", "boot", {"NAME": ["linux-aurora"], "VERSION": [kernel]}),
                     (loader, "boot", {"NAME": [loader], "VERSION": ["1.6.1.aurora23-4"]})]
-        for kernel in ("7.3.aurora1-1", "7.3.0.aurora0testedgeD-1", "7.10.0-1", "8.0.0-1"):
-            with self.assertRaisesRegex(ValueError, "with m1n1-aurora"):
+        # A release candidate sorts below 7.3 by vercmp, with or without a separator: still 7.3.
+        for kernel in ("7.3rc1-1", "7.3-rc1-1", "7.3.aurora1-1", "7.3.0.aurora0testedgeD-1", "7.10.0-1", "8.0.0-1",
+                       "aurora-1"):
+            with self.subTest(kernel=kernel), self.assertRaisesRegex(
+                    ValueError, f"^edge pairs linux-aurora {kernel} with m1n1-aurora; m1n1-aurora is not qualified"):
                 channel_set.refuse_untested_boot_pair(chosen(kernel), "edge")
-        for kernel in ("7.2.11.aurora16-1", "7.2.0-1", "6.19.9-1", "2:7.2.11-1"):
+        for kernel in ("7.2.11.aurora16-1", "7.2rc1-1", "7.2.0-1", "6.19.9-1", "6.30-1", "2:7.2.11-1"):
             channel_set.refuse_untested_boot_pair(chosen(kernel), "edge")
         channel_set.refuse_untested_boot_pair(chosen("7.3.0.aurora0testedgeC-1", "aura"), "edge")
         for lane in ("rc", "stable"):

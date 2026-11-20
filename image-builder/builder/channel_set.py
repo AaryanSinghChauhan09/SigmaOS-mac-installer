@@ -211,7 +211,7 @@ def resolve(entries, policy, channel):
 # needs it and conflicts with every older one, and m1n1-aurora with it is not
 # qualified for edge images. Until this builder installs aura, an edge image never
 # pairs the two; it stops instead, and the last edge image keeps serving installs.
-# '7.3', not '7.3.0', so a 7.3.aurora1 pkgver is caught too.
+# Compared by major.minor alone, so 7.3rc1, 7.3.aurora1 and 7.3.0 all count as 7.3.
 AURA_KERNEL = '7.3'
 
 
@@ -221,6 +221,12 @@ def upstream_version(version):
     return re.sub(r'^[0-9]+:', '', version).rsplit('-', 1)[0]
 
 
+def kernel_series(version):
+    """VERSION's kernel major.minor as integers, from its pkgver, or None when it names none."""
+    match = re.match(r'([0-9]+)\.([0-9]+)', upstream_version(version))
+    return (int(match[1]), int(match[2])) if match else None
+
+
 def refuse_untested_boot_pair(chosen, lane):
     """An edge set must not pair linux-aurora AURA_KERNEL or newer with m1n1-aurora. rc and
     stable are left alone: they change only through promotion, which holds the 7.3 set back."""
@@ -228,11 +234,14 @@ def refuse_untested_boot_pair(chosen, lane):
         return
     versions = {entry['NAME'][0]: entry['VERSION'][0] for _, group, entry in chosen if group == 'boot'}
     kernel = versions.get('linux-aurora')
-    require(not ('m1n1-aurora' in versions and kernel is not None
-                 and candidate_set.vercmp(upstream_version(kernel), AURA_KERNEL) >= 0),
-            f'edge pairs linux-aurora {kernel} with m1n1-aurora, which is not qualified with a '
-            f'{AURA_KERNEL} or newer kernel for edge images (that kernel boots through aura, '
-            'omacom/omarchy-pkgs#3025); this builder does not install aura yet, so no edge image is built')
+    if 'm1n1-aurora' not in versions or kernel is None:
+        return
+    # A pkgver with no major.minor is refused too: it cannot be shown to be older.
+    series = kernel_series(kernel)
+    require(series is not None and series < kernel_series(AURA_KERNEL),
+            f'edge pairs linux-aurora {kernel} with m1n1-aurora; m1n1-aurora is not qualified for edge '
+            f'images with linux-aurora {AURA_KERNEL} or newer (that kernel boots through aura, '
+            'omacom/omarchy-pkgs#3025), and this builder does not install aura yet')
 
 
 def manifest(chosen, lane, database_sha256, channel):
