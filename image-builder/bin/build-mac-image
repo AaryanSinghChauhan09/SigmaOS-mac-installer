@@ -61,7 +61,7 @@ BOOTSTRAP=(base sudo btrfs-progs dosfstools e2fsprogs archlinuxarm-keyring asahi
 # just the file the Limine command line is derived from.
 PLATFORM_PACKAGES=(mkinitcpio limine limine-snapper-sync aurora-scripts aurora-fwextract)
 # The asahi-alarm names of the Apple tools omarchy-pkgs builds as aurora-*: a
-# lane whose pinned [omarchy] does not carry both aurora tools yet (rc and
+# lane whose pinned [omarchy] does not carry the aurora tools yet (rc and
 # stable before the imports reach them) installs these (select_platform_tools).
 declare -A PLATFORM_TOOL_FALLBACK=([aurora-scripts]=asahi-scripts [aurora-fwextract]=asahi-fwextract)
 # The speaker stack's model profiles and DSP chain. Without alsa-ucm-conf-asahi
@@ -513,22 +513,31 @@ candidate_repository_order() {
   repository_order=("${order[@]}")
 }
 
-# The lane's own names for the Apple tools, as a pair: aurora-* where its
-# pinned [omarchy] carries both (aurora-fwextract depends on aurora-scripts by
-# name), else asahi-alarm's asahi-*. The pre-check, the install, qualified()
-# and edge-dispatch-filter all take this choice, so rc and stable keep building
-# before the imports reach them and edge never takes asahi-alarm's.
+# The lane's own names for the Apple tools: aurora-scripts wherever the lane's
+# pinned [omarchy] or the candidate set carries it, and aurora-fwextract only
+# beside it (it depends on aurora-scripts by name); asahi-alarm's names
+# otherwise. The pre-check, the install, qualified() and edge-dispatch-filter
+# all take this choice, so rc and stable keep building before the imports
+# reach them, edge never takes asahi-alarm's, and a candidate set's own
+# aurora-scripts is always the one installed.
 select_platform_tools() {
-  local listing index name carried=true
+  local listing index scripts=asahi-scripts fwextract=asahi-fwextract
   listing=$(bsdtar -tf "$repos/omarchy/omarchy.db") || fail "could not read the pinned omarchy.db"
-  for name in "${!PLATFORM_TOOL_FALLBACK[@]}"; do
-    grep -Eq "^$name-[^-/]+-[^-/]+/(desc)?\$" <<<"$listing" || carried=false
-  done
-  [[ $carried == false ]] || return 0
+  if platform_tool_available aurora-scripts "$listing"; then
+    scripts=aurora-scripts
+    platform_tool_available aurora-fwextract "$listing" && fwextract=aurora-fwextract
+  fi
   for index in "${!PLATFORM_PACKAGES[@]}"; do
-    name=${PLATFORM_PACKAGES[index]}
-    [[ -z ${PLATFORM_TOOL_FALLBACK[$name]:-} ]] || PLATFORM_PACKAGES[index]=${PLATFORM_TOOL_FALLBACK[$name]}
+    case ${PLATFORM_PACKAGES[index]} in
+      aurora-scripts) PLATFORM_PACKAGES[index]=$scripts ;;
+      aurora-fwextract) PLATFORM_PACKAGES[index]=$fwextract ;;
+    esac
   done
+}
+
+# Whether the pinned omarchy.db LISTING (directory or desc members) or the candidate set carries NAME.
+platform_tool_available() {
+  grep -Eq "^$1-[^-/]+-[^-/]+/(desc)?\$" <<<"$2" || [[ -n $(candidate_archive "$1") ]]
 }
 
 # The selected name for an Apple tool, given either of its names.

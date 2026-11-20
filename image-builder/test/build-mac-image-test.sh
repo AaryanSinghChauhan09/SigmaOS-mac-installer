@@ -972,7 +972,18 @@ tool_db "$scratch/tools-rc" aurora-scripts-extra-1-1 omarchy-mac-0.2.3-2
   fail "a lane whose [omarchy] lacks the tools installs asahi-alarm's names: $(selected_tools "$scratch/tools-rc")"
 tool_db "$scratch/tools-half" aurora-fwextract-0.9.2-1
 [[ $(selected_tools "$scratch/tools-half") == "asahi-scripts asahi-fwextract | asahi-scripts asahi-scripts asahi-fwextract asahi-fwextract" ]] ||
-  fail "the tools go as a pair: aurora-fwextract needs aurora-scripts, so half an import keeps asahi-alarm's: $(selected_tools "$scratch/tools-half")"
+  fail "aurora-fwextract needs aurora-scripts, so without it the lane keeps asahi-alarm's pair: $(selected_tools "$scratch/tools-half")"
+tool_db "$scratch/tools-scripts" aurora-scripts-20261023-1
+[[ $(selected_tools "$scratch/tools-scripts") == "aurora-scripts asahi-fwextract | aurora-scripts aurora-scripts asahi-fwextract asahi-fwextract" ]] ||
+  fail "aurora-scripts alone is taken, beside asahi-alarm's extractor: $(selected_tools "$scratch/tools-scripts")"
+# A candidate set's own aurora-scripts is the one installed, whatever the lane's [omarchy] carries.
+mkdir -p "$scratch/tools-candidate-set"
+printf '{"packages":[{"name":"aurora-scripts","filename":"scripts.pkg","group":"boot"}]}\n' >"$scratch/tools-candidate-set/import.json"
+tool_db "$scratch/tools-candidate" omarchy-mac-0.2.3-2
+from_set=$(repos=$scratch/tools-candidate candidates=$scratch/tools-candidate-set; fail() { builder_fail "$@"; }
+  select_platform_tools; echo "${PLATFORM_PACKAGES[*]: -2} | $(qualified asahi-scripts aurora-scripts | paste -sd' ' -)")
+[[ $from_set == "aurora-scripts asahi-fwextract | omarchy-candidates/aurora-scripts omarchy-candidates/aurora-scripts" ]] ||
+  fail "a candidate set's aurora-scripts is selected and installed from the set: $from_set"
 # A database written without directory headers, only the desc members.
 mkdir -p "$scratch/tools-flat/omarchy" "$scratch/tools-flat/tree/aurora-scripts-20261023-1" "$scratch/tools-flat/tree/aurora-fwextract-0.9.2-1"
 : >"$scratch/tools-flat/tree/aurora-scripts-20261023-1/desc"

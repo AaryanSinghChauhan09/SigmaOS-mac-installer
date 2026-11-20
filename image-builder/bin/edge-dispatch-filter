@@ -109,10 +109,12 @@ def platform_tools(builder):
 
 def builder_seeds(builder, entries):
     """builder_arrays with the Apple tools named as select_platform_tools names them for this omarchy.db:
-    aurora-* when it carries both, else asahi-alarm's."""
+    aurora-scripts when it carries it, aurora-fwextract only beside it, else asahi-alarm's."""
     tools = platform_tools(builder)
-    names = builder_arrays(builder)
-    return names if all(name in entries for name in tools) else [tools.get(name, name) for name in names]
+    scripts = 'aurora-scripts' in entries
+    chosen = {'aurora-scripts': scripts, 'aurora-fwextract': scripts and 'aurora-fwextract' in entries}
+    require(set(chosen) == set(tools), f'{builder.name} has Apple tools this filter does not know')
+    return [name if chosen.get(name, True) else tools[name] for name in builder_arrays(builder)]
 
 
 def db_url(server, repository):

@@ -326,8 +326,11 @@ class BuilderSeedsTest(unittest.TestCase):
                          {'aurora-scripts': 'asahi-scripts', 'aurora-fwextract': 'asahi-fwextract'})
         both = {'aurora-scripts': {}, 'aurora-fwextract': {}, 'lzfse': {}}
         self.assertEqual(self.tools(edge_filter.builder_seeds(self.BUILDER, both)), ['aurora-scripts', 'aurora-fwextract'])
-        # Half an import, or none, keeps asahi-alarm's pair, whose asahi-fwextract pulls lzfse.
-        for entries in ({'aurora-scripts': {}, 'lzfse': {}}, {}):
+        # aurora-scripts alone keeps asahi-alarm's extractor, which pulls lzfse.
+        self.assertEqual(self.tools(edge_filter.builder_seeds(self.BUILDER, {'aurora-scripts': {}, 'lzfse': {}})),
+                         ['aurora-scripts', 'asahi-fwextract'])
+        # aurora-fwextract without aurora-scripts, or neither, keeps asahi-alarm's pair.
+        for entries in ({'aurora-fwextract': {}}, {}):
             with self.subTest(sorted(entries)):
                 self.assertEqual(self.tools(edge_filter.builder_seeds(self.BUILDER, entries)),
                                  ['asahi-scripts', 'asahi-fwextract'])
