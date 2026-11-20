@@ -207,6 +207,34 @@ def resolve(entries, policy, channel):
     return chosen
 
 
+# The kernel from which edge boots through aura (omacom/omarchy-pkgs#3025): aura
+# needs it and conflicts with every older one, and m1n1-aurora with it is not
+# qualified for edge images. Until this builder installs aura, an edge image never
+# pairs the two; it stops instead, and the last edge image keeps serving installs.
+# '7.3', not '7.3.0', so a 7.3.aurora1 pkgver is caught too.
+AURA_KERNEL = '7.3'
+
+
+def upstream_version(version):
+    """VERSION's pkgver alone: no epoch, so a rollback re-pinned above a newer kernel by an
+    epoch bump is compared by what it ships; no pkgrel."""
+    return re.sub(r'^[0-9]+:', '', version).rsplit('-', 1)[0]
+
+
+def refuse_untested_boot_pair(chosen, lane):
+    """An edge set must not pair linux-aurora AURA_KERNEL or newer with m1n1-aurora. rc and
+    stable are left alone: they change only through promotion, which holds the 7.3 set back."""
+    if lane != 'edge':
+        return
+    versions = {entry['NAME'][0]: entry['VERSION'][0] for _, group, entry in chosen if group == 'boot'}
+    kernel = versions.get('linux-aurora')
+    require(not ('m1n1-aurora' in versions and kernel is not None
+                 and candidate_set.vercmp(upstream_version(kernel), AURA_KERNEL) >= 0),
+            f'edge pairs linux-aurora {kernel} with m1n1-aurora, which is not qualified with a '
+            f'{AURA_KERNEL} or newer kernel for edge images (that kernel boots through aura, '
+            'omacom/omarchy-pkgs#3025); this builder does not install aura yet, so no edge image is built')
+
+
 def manifest(chosen, lane, database_sha256, channel):
     return {
         'schema': 1,
@@ -260,6 +288,7 @@ def snapshot(database, database_sha256, lane, packages, destination, trust=TRUST
     require(digest(frozen) == database_sha256, 'the channel database changed since it was pinned')
     chosen = resolve(read_database(frozen), policy, channel)
     frozen.unlink()
+    refuse_untested_boot_pair(chosen, lane)
     for role, _, entry in chosen:
         version = entry['VERSION'][0]
         require(release is None or role not in ('omarchy', 'omarchy-settings')
