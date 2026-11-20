@@ -224,7 +224,6 @@ class CatalogReleaseTests(ReleaseTestCase):
                 [f"sha256:{sha(part)}" for part in PAYLOAD_PARTS],
             )
             self.assertEqual(model.get("previewNote"), untested.get(model["deviceIdentifier"]))
-        self.assertTrue(untested, "M3 Macs are marked untested")
 
         signed = self.sign(catalog_path)
         self.assertEqual(signed.returncode, 0, signed.stderr)
@@ -507,6 +506,23 @@ class CatalogReleaseTests(ReleaseTestCase):
         other = artifact(IMAGE, ZIP, b"a rebuilt payload")
         with self.assertRaisesRegex(release.Refusal, "names image id"):
             build(IMAGE, other)
+
+    def test_only_an_untested_mac_carries_a_preview_note(self) -> None:
+        note = "Untested: qualified on edge next"
+        untested = release.supported_models.untested
+        release.supported_models.untested = lambda: {"apple,j700": note}
+        self.addCleanup(setattr, release.supported_models, "untested", untested)
+        catalog = release.build_catalog(
+            "edge", IMAGE, payload_document(), engine_document(),
+            artifact(IMAGE, "installer_data.json", METADATA), evidence_document(), installer_document(),
+            datetime.datetime(2026, 10, 14, tzinfo=datetime.timezone.utc))
+        for model in catalog["models"]:
+            with self.subTest(model["deviceIdentifier"]):
+                self.assertEqual(model["status"], "enabled")
+                if model["deviceIdentifier"] == "apple,j700":
+                    self.assertEqual(model["previewNote"], note)
+                else:
+                    self.assertNotIn("previewNote", model)
 
     # ── signing ──────────────────────────────────────────────────────────────
 
