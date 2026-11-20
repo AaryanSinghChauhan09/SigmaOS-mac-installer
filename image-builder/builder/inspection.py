@@ -452,12 +452,16 @@ def check_package_mtrees(root: Path, candidates: Candidates) -> str:
     return f"all {len(candidates.installed)} package mtree references match their frozen archives"
 
 
-def check_supported_models(root: Path, candidates: Candidates, report: dict, policy: dict | None = None) -> str:
+def check_supported_models(root: Path, candidates: Candidates, report: dict, policy: dict | None = None,
+                           channel: str | None = None) -> str:
     """Every Mac the image admits has its Aurora device tree in stage 2. The
-    trusted policy names them; the Aurora U-Boot ships no device trees."""
+    trusted policy names them; the Aurora U-Boot ships no device trees. An edge
+    image also needs the trees of the edge-only (untested) Macs, which rc and
+    stable never offer."""
     policy = policy if policy is not None else candidate_set.load_policy()
     kernel_dtbs = {PurePosixPath(p).name for p in candidates.dtbs()}
-    models = sorted(f"{tree}.dtb" for tree in policy["device_trees"])
+    trees = list(policy["device_trees"]) + (list(policy.get("edge_device_trees", [])) if channel == "edge" else [])
+    models = sorted(f"{tree}.dtb" for tree in trees)
     require(models, "the trust policy names no Mac")
     missing = [name for name in models if name not in kernel_dtbs]
     require(not missing, "the Aurora kernel lacks device trees for " + ", ".join(missing))
@@ -838,7 +842,7 @@ def inspect(root: Path, candidates_dir: Path, channel: str, factory: Path | None
         ("candidate-files", lambda: check_candidate_files(root, candidates, report)),
         ("package-mtrees", lambda: check_package_mtrees(root, candidates)),
         ("m1n1-stage2", lambda: m1n1_stage2(root, candidates, report)),
-        ("aurora-device-trees", lambda: check_supported_models(root, candidates, report, policy)),
+        ("aurora-device-trees", lambda: check_supported_models(root, candidates, report, policy, channel)),
         ("limine-uki", lambda: check_limine(root, candidates, report)),
         ("embedded-initramfs", lambda: check_embedded_initramfs(root, report)),
         ("boot-splash", lambda: check_boot_splash(root, report)),

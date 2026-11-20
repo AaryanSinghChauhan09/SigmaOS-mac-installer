@@ -1474,16 +1474,33 @@ stage_board_boot_payloads() {
 # (the engine's confined_stage1). Only an image whose Stage 2 is aura carries
 # them: aura ships the Mach-O beside its raw Stage 1, and the confined Stage 2 is
 # the same assembled bundle as m1n1/boot.bin, inside the 16 MiB slot aura keeps
-# for it. Only a monitor-free aura (/usr/share/aura/monitor-free, which needs a
-# linux-aurora built with CONFIG_ARM64_CTXR_EXECMEM) runs the kernel in that
-# window, as aurora-silicon/alarm-aurora's prepare-ctxr-stage2.py requires. Any
-# other image carries neither file, and the engine refuses an M4 on it.
+# for it. Only a monitor-free aura runs the kernel in that window (it needs a
+# linux-aurora built with CONFIG_ARM64_CTXR_EXECMEM), as aurora-silicon/
+# alarm-aurora's prepare-ctxr-stage2.py requires. Any other image carries
+# neither file, and the engine refuses an M4 on it.
 CONFINED_STAGE2_MAX_BYTES=$(( 16 << 20 ))
+# aura 1.0.0b7 is the first without the EL2 monitor (aura#77).
+MONITOR_FREE_AURA=1.0.0b7
+
+# Whether the image's aura is monitor-free: Aurora's packages say so with
+# /usr/share/aura/monitor-free; omarchy-pkgs' aura (whose policy minimum on
+# edge is 1.0.0b13) by its version in the image's package database.
+monitor_free_aura() {
+  [[ -f $target/usr/share/aura/monitor-free ]] && return 0
+  command -v vercmp >/dev/null 2>&1 || return 1
+  local desc version
+  for desc in "$target"/var/lib/pacman/local/aura-[0-9]*/desc; do
+    [[ -f $desc ]] || continue
+    version=$(sed -n '/^%VERSION%$/{n;p;q;}' "$desc")
+    [[ -n $version ]] && (( $(vercmp "$version" "$MONITOR_FREE_AURA") >= 0 )) && return 0
+  done
+  return 1
+}
 stage_confined_boot_payloads() {
   local stage1="$target/usr/share/aura/stage1/aura.macho"
   local stage2="$target/boot/efi/m1n1/boot.bin"
   [[ -e $stage1 || -L $stage1 ]] || return 0
-  [[ -f $target/usr/share/aura/monitor-free ]] || return 0
+  monitor_free_aura || return 0
   [[ -s $stage1 && ! -L $stage1 && -s $stage2 && ! -L $stage2 ]] ||
     fail "the image lacks matched aura Mach-O Stage 1 and Stage 2 payloads for M4 and later Macs"
   (( $(wc -c <"$stage2") <= CONFINED_STAGE2_MAX_BYTES )) ||

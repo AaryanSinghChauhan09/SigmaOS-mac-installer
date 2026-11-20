@@ -241,6 +241,15 @@ class InspectionTest(unittest.TestCase):
         with self.assertRaisesRegex(inspection.InspectionError, "t8132-j604"):
             inspection.check_supported_models(self.root, inspection.Candidates(self.candidates), report, policy)
 
+    def test_an_edge_only_device_tree_is_required_on_edge_alone(self):
+        policy = dict(fixtures.POLICY, edge_device_trees=["t8142-j815"])
+        candidates = inspection.Candidates(self.candidates)
+        for channel in (None, "rc", "stable"):
+            with self.subTest(channel):
+                inspection.check_supported_models(self.root, candidates, {}, policy, channel)
+        with self.assertRaisesRegex(inspection.InspectionError, "t8142-j815"):
+            inspection.check_supported_models(self.root, candidates, {}, policy, "edge")
+
     def test_limine_loader_menu_and_uki(self):
         esp = type("Esp", (), {"__truediv__": lambda _, rel: self.root / "boot/efi" / rel})()
         cases = {
@@ -1384,13 +1393,17 @@ class DeviceTreeCoverageTest(unittest.TestCase):
     """Device trees are per board: the trust policy names one for every Mac the
     catalogs may offer (scripts/supported-models.json, untested ones included)
     and none beyond them. A board joins both together, so the image can never
-    admit a Mac its kernel cannot describe, or carry a tree no catalog offers."""
+    admit a Mac its kernel cannot describe, or carry a tree no catalog offers.
+    An edge-only tree belongs to an untested Mac, which rc and stable never offer."""
 
     def test_every_supported_mac_has_exactly_one_policy_device_tree(self):
         manifest = json.loads((fixtures.ROOT.parent / "scripts/supported-models.json").read_text())
         boards = {identifier.removeprefix("apple,") for identifier in manifest["supported"]}
+        untested = {identifier.removeprefix("apple,") for identifier in manifest.get("untested", {})}
+        edge_only = {tree.split("-", 1)[1] for tree in fixtures.POLICY.get("edge_device_trees", [])}
+        self.assertEqual(sorted(edge_only - untested), [], "an edge-only device tree for a tested Mac")
         trees = {}
-        for tree in fixtures.POLICY["device_trees"]:
+        for tree in fixtures.POLICY["device_trees"] + fixtures.POLICY.get("edge_device_trees", []):
             found = re.fullmatch(r"t([0-9a-f]{4})-([jk][0-9]+[a-z]*)", tree)
             self.assertIsNotNone(found, f"{tree} is not t<chip>-<board>")
             self.assertNotIn(found[2], trees, f"{found[2]} has two device trees")

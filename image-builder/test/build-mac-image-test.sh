@@ -1209,6 +1209,19 @@ pass "a set without a boot loader record (rc, stable, candidate sets) keeps m1n1
   printf 'aura Mach-O Stage 1' >"$target/usr/share/aura/stage1/aura.macho"
   stage_confined_boot_payloads
   [[ ! -e $target/boot/efi/aurora/stage1.macho && ! -e $target/boot/efi/m1n1/boot-ctxr.bin ]] || exit 1
+  if command -v vercmp >/dev/null 2>&1; then
+    mkdir -p "$target/var/lib/pacman/local/aura-1.0.0b6-1"
+    printf '%%NAME%%\naura\n\n%%VERSION%%\n1.0.0b6-1\n' >"$target/var/lib/pacman/local/aura-1.0.0b6-1/desc"
+    stage_confined_boot_payloads
+    [[ ! -e $target/boot/efi/m1n1/boot-ctxr.bin ]] || exit 1
+    rm -r "$target/var/lib/pacman/local/aura-1.0.0b6-1"
+    mkdir -p "$target/var/lib/pacman/local/aura-1.0.0b13.r20261118.edgeB2-1"
+    printf '%%NAME%%\naura\n\n%%VERSION%%\n1.0.0b13.r20261118.edgeB2-1\n' \
+      >"$target/var/lib/pacman/local/aura-1.0.0b13.r20261118.edgeB2-1/desc"
+    stage_confined_boot_payloads
+    cmp "$target/boot/efi/m1n1/boot.bin" "$target/boot/efi/m1n1/boot-ctxr.bin" || exit 1
+    rm -r "$target/var/lib/pacman/local" "$target/boot/efi/m1n1/boot-ctxr.bin" "$target/boot/efi/aurora/stage1.macho"
+  fi
   : >"$target/usr/share/aura/monitor-free"
   stage_confined_boot_payloads
   cmp "$target/usr/share/aura/stage1/aura.macho" "$target/boot/efi/aurora/stage1.macho" || exit 1
@@ -1218,7 +1231,7 @@ pass "a set without a boot loader record (rc, stable, candidate sets) keeps m1n1
     exit 1
   fi
 ) || fail "the M4 boot payloads are missing, mismatched or oversized"
-pass "a monitor-free aura image stages the Mach-O Stage 1 and confined Stage 2; others stage neither; over 16 MiB is refused"
+pass "a monitor-free aura image (marker or version) stages the Mach-O Stage 1 and confined Stage 2; others stage neither; over 16 MiB is refused"
 
 # Base runtime requests must resolve to the same reviewed stack as Apple requests.
 (
