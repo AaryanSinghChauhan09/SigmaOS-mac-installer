@@ -63,9 +63,24 @@ UPSTREAM_IPSWS = [
           "j514map", "j516sap", "j516cap", "j516map"], "14.8.3"),
 ]
 IPSW_VERSIONS = patched_ipsws() + UPSTREAM_IPSWS
+
+
+def patched_rows(pattern):
+    """The rows the downstream patch adds to a table, as shipped."""
+    main = PATCH.read_text().split("diff --git a/src/main.py")[1].split("diff --git")[0]
+    return {match[1]: match[2] for match in re.finditer(pattern, main, re.MULTILINE)}
+
+
+PATCHED_CHIPS = {int(chip, 16): version for chip, version in
+                 patched_rows(r'^\+    (0x[0-9a-f]{4}): "([0-9.]+)",').items()}
+PATCHED_DEVICES = patched_rows(r'^\+    "([jk][0-9]+[a-z]*ap)": +Device\("([0-9.]+)", False\),')
+M4_CHIPS = {0x8132, 0x6040, 0x6041}
+M4_BOARDS = ["j604ap", "j623ap", "j624ap", "j713ap", "j715ap", "j773gap",
+             "j614sap", "j614cap", "j616sap", "j616cap", "j773sap", "j575cap"]
 CHIP_MIN_VER = {0x8103: "11.0", 0x8112: "12.4", 0x8122: "14.8.3", 0x8140: "26.6"}
 DEVICE_MIN = {"j313ap": "11.0", "j413ap": "12.4", "j613ap": "14.8.3",
-              "j615ap": "14.8.3", "j700ap": "26.6"}
+              "j615ap": "14.8.3", "j700ap": "26.6", **{board: PATCHED_DEVICES.get(board) for board in M4_BOARDS}}
+CHIP_MIN_VER.update({chip: PATCHED_CHIPS.get(chip) for chip in M4_CHIPS})
 TODAY = ["13.5", "14.8.3", "26.6"]
 ON_26_6_2 = dict(sys_firmware="mBoot-18000.161.10", macos_ver="26.6.2",
                  sfr_full_ver="25.7.83.0.0,0")
@@ -97,7 +112,7 @@ class PatchedFirmwareTableTests(unittest.TestCase):
         self.assertEqual((neo.version, neo.devices), ("26.6", ["j700ap"]))
         self.assertEqual(air, IPSW(
             "26.6.2", "26.0", "mBoot-18000.161.10", "25.7.83.0.0,0", False,
-            ["j613ap", "j615ap", "j700ap"],
+            ["j613ap", "j615ap", "j700ap"] + M4_BOARDS,
             "https://updates.cdn-apple.com/2026SummerFCS/fullrestores/140-75212/"
             "A2A24B94-1FC1-45A3-93F7-C51B02AF1F4D/UniversalMac_26.6.2_25G83_Restore.ipsw"))
 
@@ -109,6 +124,31 @@ class PatchedFirmwareTableTests(unittest.TestCase):
         self.assertIn("+        if self.engine_runtime:\n"
                       "+            omarchy_firmware.require_available(minver, avail, split_ver)\n", main)
         self.assertNotIn("+                stub_size=(STUB_SIZE_MACOS26", main)
+
+
+class M4FirmwareTableTests(unittest.TestCase):
+    def test_the_patch_admits_the_m4_family_by_chip_and_each_board_by_its_own_row(self):
+        self.assertEqual({chip: PATCHED_CHIPS.get(chip) for chip in M4_CHIPS},
+                         {0x8132: "26.6", 0x6040: "26.6", 0x6041: "26.6"})
+        self.assertEqual({board: PATCHED_DEVICES.get(board) for board in M4_BOARDS},
+                         dict.fromkeys(M4_BOARDS, "26.6.2"))
+
+    def test_every_m4_board_installs_only_the_26_6_2_stub(self):
+        offered = ["13.5", "14.8.3", "26.6", "26.6.2"]
+        for board in M4_BOARDS:
+            for chip in M4_CHIPS:
+                with self.subTest(board=board, chip=hex(chip)):
+                    sysinfo, device = mac(board, chip)
+                    self.assertEqual(choose(sysinfo, device, offered), ("26.6.2", STUB_SIZE_MACOS26))
+
+    def test_an_m4_whose_payload_offers_no_26_6_2_gets_no_firmware(self):
+        sysinfo, device = mac("j713ap", 0x8132)
+        self.assertIsNone(choose(sysinfo, device, TODAY + ["26.6"])[0])
+
+    def test_an_m4_whose_system_firmware_predates_26_6_2_cannot_take_it(self):
+        sysinfo, device = mac("j616sap", 0x6040, sys_firmware="mBoot-18000.161.9",
+                              macos_ver="26.6", sfr_full_ver="25.7.72.0.0,0")
+        self.assertIsNone(choose(sysinfo, device, ["26.6.2"])[0])
 
 
 class DefaultFirmwareTests(unittest.TestCase):
