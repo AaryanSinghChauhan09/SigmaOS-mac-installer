@@ -49,7 +49,7 @@ REQUIRED_PACKAGES = (
     "limine",
     "limine-mkinitcpio-hook",
     "limine-snapper-sync",
-    "asahi-fwextract",
+    "aurora-fwextract",
     "speakersafetyd",
     "alsa-ucm-conf-asahi",
     "asahi-audio",
@@ -246,7 +246,14 @@ AURORA_REPLACEMENTS = {
     "aurora-bless": {"asahi-bless"},
     "aurora-audio": {"asahi-audio"},
     "alsa-ucm-conf-aurora": {"alsa-ucm-conf-asahi"},
+    "aurora-scripts": {"asahi-scripts"},
+    "aurora-fwextract": {"asahi-fwextract"},
 }
+
+
+# The names an image built before omarchy-pkgs imported asahi-alarm's tools
+# carries for them.
+LEGACY_NAMES = {"aurora-scripts": "asahi-scripts", "aurora-fwextract": "asahi-fwextract"}
 
 
 def aurora_replaced(packages: dict[str, set[str]]) -> set[str]:
@@ -284,6 +291,7 @@ def check_packages(verification: Verification, root: Path, runtime_packages: fro
     installed = set(packages)
     filled = installed | {role for name in runtime_packages & installed for role in packages[name]}
     filled |= aurora_replaced(packages)
+    filled |= {name for name, legacy in LEGACY_NAMES.items() if legacy in installed}
     missing = [name for name in REQUIRED_PACKAGES if name not in filled]
     verification.record(
         "packages-required-present",
