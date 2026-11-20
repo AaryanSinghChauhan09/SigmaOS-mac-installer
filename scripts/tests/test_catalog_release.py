@@ -224,7 +224,6 @@ class CatalogReleaseTests(ReleaseTestCase):
                 [f"sha256:{sha(part)}" for part in PAYLOAD_PARTS],
             )
             self.assertEqual(model.get("previewNote"), untested.get(model["deviceIdentifier"]))
-        self.assertTrue(untested, "M3 Macs are marked untested")
 
         signed = self.sign(catalog_path)
         self.assertEqual(signed.returncode, 0, signed.stderr)

@@ -267,7 +267,7 @@ class CatalogGeneratorTests(unittest.TestCase):
         self.assertEqual(len(manifest["supported"]), 35)
         self.assertTrue(set(M3_MACS) <= set(manifest["supported"]))
         self.assertIn("apple,j700", manifest["supported"])
-        self.assertIn("apple,j700", manifest["untested"])
+        self.assertEqual(manifest["untested"], {})
         self.assertEqual(set(manifest["refused"]), {"apple,j575d", "apple,j614s"})
         self.assertEqual(manifest["developer"], {})
         for template in sorted(MANIFEST.parent.glob("release-inputs*.template.json")):

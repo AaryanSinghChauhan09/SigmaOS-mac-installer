@@ -38,7 +38,7 @@ Not supported:
 - The M3 Ultra Mac Studio (`apple,j575d`): the pinned v0.9.2 engine cannot inspect or plan it.
 - M4 and later, for example the MacBook Pro 14-inch M4 Pro (`apple,j614s`). Public builds keep these blocked until official support and physical qualification both exist.
 
-Untested: the M3 Macs and the MacBook Neo are marked untested in `supported-models.json`. According to [`docs/mac-release-pipeline.md`](docs/mac-release-pipeline.md#qualification-on-edge), the testing team qualifies them on real hardware on edge, after an edge release.
+Every Mac listed above has been tested on real hardware, the M3 Macs and the MacBook Neo included. A newly supported board that has not been tested yet is listed under `untested` in `supported-models.json` until the testing team qualifies it on edge ([`docs/mac-release-pipeline.md`](docs/mac-release-pipeline.md#qualification-on-edge)). No board is listed there today.
 
 Why a catalog check exists: `make-unsigned-catalog.py` refuses inputs that miss, add or refuse a board, and `publish-channels envelope` refuses to wrap a catalog that lists a Mac but leaves any of them out or disabled. Only an empty "No Mac release yet" catalog lists none. `os-promote` does not re-check an envelope staged before this rule, so a rollback to an older catalog stays possible.
 
@@ -89,7 +89,7 @@ The app can read one of three catalogs, all signed with the Omacom catalog key. 
 | --- | --- | --- |
 | Stable | `catalog-stable.signed.json` | The default since installer 2.3.14 ([#169](https://github.com/omacom/omarchy-mac-installer/pull/169)). Offers Omarchy 4.5. |
 | Release candidate (rc) | `catalog-rc.signed.json` | Release candidates before they reach stable. Was the default in installer 2.3.13 ([#159](https://github.com/omacom/omarchy-mac-installer/pull/159)). |
-| Edge | `catalog-edge.signed.json` | Where the M3 Macs and the MacBook Neo are qualified on real hardware (see [Supported Macs](#supported-macs)). |
+| Edge | `catalog-edge.signed.json` | Where the testing team qualifies new images and newly supported Macs on real hardware (see [Supported Macs](#supported-macs)). |
 
 The channels match Omarchy's. Dev is a developer choice made after installation, not an installer channel.
 
