@@ -140,6 +140,28 @@ def build(out: Path, packages=PACKAGES, candidates=PACKAGES[:2], inspection="pas
     (out / "IMAGE").write_text("\n".join(image) + "\n")
 
 
+class RuntimeProvidersTest(unittest.TestCase):
+    """The names an image's packages fill under another name, from its set's import.json."""
+
+    def providers(self, **summary):
+        support = [{"name": n, "group": "support"} for n in ("aurora-audio", "alsa-ucm-conf-aurora", "speakerguardd",
+                                                              "omarchy-aurora-firmware")]
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "import.json").write_text(json.dumps(dict(summary, packages=summary["packages"] + support)))
+            return check.runtime_providers(Path(directory))
+
+    def test_an_edge_image_s_aura_fills_m1n1_aurora(self):
+        edge = self.providers(boot_loader={"stage2": "aura", "stage1": "m1n1-aurora"},
+                              packages=[{"name": "aura", "group": "boot"}, {"name": "m1n1-aurora", "group": "stage1"}])
+        self.assertEqual(edge["m1n1-aurora"], "aura")
+        rc = self.providers(boot_loader={"stage2": "m1n1-aurora", "stage1": "m1n1-aurora"},
+                            packages=[{"name": "m1n1-aurora", "group": "boot"}])
+        self.assertNotIn("m1n1-aurora", rc)
+        with self.assertRaisesRegex(check.CheckError, "boot loader aura is not among its boot packages"):
+            self.providers(boot_loader={"stage2": "aura", "stage1": "m1n1-aurora"},
+                           packages=[{"name": "m1n1-aurora", "group": "stage1"}])
+
+
 class ChannelBuildDirectoryTest(unittest.TestCase):
     """A channel build's records name the channel set and database, and describe a public image: one that
     carries the native Recovery app, which the installer finishes every public install with."""
@@ -479,6 +501,23 @@ class BuildDirectoryTest(unittest.TestCase):
         build(self.out)
         with self.assertRaisesRegex(check.CheckError, "only a public image"):
             check.image_name("edge", self.out)
+
+    def test_an_edge_stage1_source_is_recorded_and_never_installed(self):
+        # An edge set's m1n1-aurora: carried for the Neo's raw Stage 1 beside the installed aura.
+        source = "stage1_source=m1n1-aurora|1.6.1.aurora23-4|m1n1-aurora-1.6.1.aurora23-4-aarch64.pkg.tar.zst|" + "e" * 64
+        build(self.out, provenance_edit=lambda lines: lines + [source])
+        check.check_provenance("edge", self.out)
+        installed = PACKAGES[0][0]
+        for lines, message in (([source, source], "malformed Stage 1 source"),
+                               ([source.rsplit("|", 1)[0] + "|bad"], "malformed Stage 1 source"),
+                               ([source.replace("m1n1-aurora|", f"{installed}|", 1)],
+                                f"installs {installed}, which the set carries only for its raw Stage 1")):
+            with self.subTest(message=message):
+                shutil.rmtree(self.out)
+                self.out.mkdir()
+                build(self.out, provenance_edit=lambda base, extra=lines: base + extra)
+                with self.assertRaisesRegex(check.CheckError, message):
+                    check.check_provenance("edge", self.out)
 
     def test_a_candidate_installed_from_another_repository(self):
         packages = [PACKAGES[0], ("uboot-aurora", "2026.07-1", "asahi-alarm", PACKAGES[1][3], PACKAGES[1][4]), PACKAGES[2]]

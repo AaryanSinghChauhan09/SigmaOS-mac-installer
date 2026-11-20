@@ -4,6 +4,7 @@ import hashlib
 import os
 import re
 from pathlib import Path
+import json
 import shutil
 import sys
 import tempfile
@@ -15,7 +16,7 @@ import fixtures  # noqa: E402
 
 inspection = fixtures.load("inspection", "builder/inspection.py")
 inspection.OWNER_UID = os.geteuid()
-CHECKS = ("candidate-versions", "runtime-sources", "minimum-versions", "refused-packages", "apple-packages", "installed-boot-payloads",
+CHECKS = ("candidate-versions", "runtime-sources", "boot-loader", "minimum-versions", "refused-packages", "apple-packages", "installed-boot-payloads",
           "candidate-files", "package-mtrees",
           "m1n1-stage2", "aurora-device-trees", "limine-uki", "embedded-initramfs", "boot-splash", "boot-maintenance",
           "image-target", "first-boot", "snapshots", "pacman-config", "installed-system", "speaker-routing", "factory")
@@ -1106,6 +1107,48 @@ class ChannelImageInspectionTest(unittest.TestCase):
     def test_the_factory_must_be_sealed_for_the_channel_set(self):
         fixtures.write(self.factory, "var/lib/omarchy/factory-sealed", "format=2\ncandidate_set=x\ncandidate_source_commit=y\n")
         self.assertFails("factory", "records another channel set")
+
+    def test_an_edge_image_boots_aura_behind_m1n1_auroras_neo_stage1(self):
+        report = self.inspect()
+        self.assertEqual(report["installed_versions"]["aura"], fixtures.AURA_VERSION)
+        self.assertIsNone(report["installed_versions"]["m1n1-aurora"], "the Stage 1 source is never installed")
+        self.assertIn("Stage 2 from aura, the MacBook Neo's raw Stage 1 from m1n1-aurora",
+                      report["checks"]["boot-loader"]["detail"])
+        self.assertIn("m1n1-aurora", report["checks"]["refused-packages"]["detail"])
+        self.assertNotIn("aura,", report["checks"]["refused-packages"]["detail"])
+        stage2 = fixtures.aura_contents()["usr/lib/asahi-boot/m1n1.bin"]
+        self.assertTrue((self.root / "boot/efi/m1n1/boot.bin").read_bytes().startswith(stage2))
+        self.assertEqual((self.root / "boot/efi/aurora/stage1-j700.bin").read_bytes(),
+                         fixtures.default_contents()["m1n1-aurora"]["usr/share/m1n1-aurora/stage1/m1n1-raw.bin"])
+
+    def test_an_edge_image_with_aura_s_own_stage1_fails(self):
+        # Edge new installs keep m1n1-aurora's Stage 1 until aura's is qualified on a Neo.
+        (self.root / "boot/efi/aurora/stage1-j700.bin").write_bytes(
+            fixtures.aura_contents()["usr/share/aura/stage1/aura-raw.bin"])
+        self.assertFails("installed-boot-payloads", "J700 Stage 1 does not match the authenticated m1n1-aurora package")
+
+    def test_an_edge_image_with_m1n1_aurora_installed_fails(self):
+        fixtures.local_package(self.root, "m1n1-aurora", fixtures.VERSIONS["m1n1-aurora"], [])
+        self.assertFails("refused-packages", "m1n1-aurora")
+        self.assertFails("candidate-versions", "m1n1-aurora is installed, but the set carries it only for its raw Stage 1")
+
+    def test_an_edge_image_with_m1n1_aurora_s_stage2_fails(self):
+        (self.root / "usr/lib/asahi-boot/m1n1.bin").write_bytes(
+            fixtures.default_contents()["m1n1-aurora"]["usr/lib/asahi-boot/m1n1.bin"])
+        self.assertFails("installed-boot-payloads", "m1n1.bin is not aura's")
+
+    def test_an_edge_set_must_carry_the_policys_boot_loader(self):
+        imported = Path(tempfile.mkdtemp(dir=self.base)) / "set"
+        shutil.copytree(self.set, imported)
+        imported.chmod(0o755)
+        summary = imported / "import.json"
+        summary.chmod(0o644)
+        value = json.loads(summary.read_text())
+        value["boot_loader"] = {"stage2": "aura", "stage1": "aura"}
+        summary.write_text(json.dumps(value))
+        report = inspection.inspect(self.root, imported, "edge", self.factory, trust=self.trust)
+        self.assertEqual(report["checks"]["boot-loader"]["result"], "failed")
+        self.assertRegex(report["checks"]["boot-loader"]["detail"], "is not the policy's")
 
 
 class StableChannelImageInspectionTest(unittest.TestCase):

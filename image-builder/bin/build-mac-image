@@ -2,7 +2,7 @@
 
 # Builds an Apple Silicon image payload from a signed candidate set: the
 # Omarchy runtime, its Apple add-on and boot packages, the Aurora stack (the
-# kernel with every Mac's device tree, m1n1-aurora's Stage 2 and Stage 1, the Aurora
+# kernel with every Mac's device tree, m1n1-aurora's Stage 2 and Stage 1 (on edge aura's Stage 2 and m1n1-aurora's Stage 1), the Aurora
 # U-Boot and the Aurora support packages) exactly as the set signed them, the rest from the package
 # databases the inputs record pins, set up by the runtime's own system setup
 # inside an isolated chroot, with a sealed @factory snapshot, first boot armed
@@ -613,7 +613,7 @@ prepare_repositories() {
   while read -r archive; do
     cp "$candidates/$archive" "$candidates/$archive.sig" "$repos/omarchy-candidates/"
     archives+=("./$archive")
-  done < <(jq -r '.packages[].filename' "$candidates/import.json")
+  done < <(installed_set '.filename')
   (cd "$repos/omarchy-candidates" && repo-add -q omarchy-candidates.db.tar.gz "${archives[@]}") \
     >>"$logs/repositories.log" 2>&1 || fail "could not publish the candidate set (logs/repositories.log)"
   rm -f "$repos/omarchy-candidates/omarchy-candidates.db"
@@ -827,6 +827,28 @@ candidate_names() {
   jq -r --arg group "$1" '.packages[] | select(.group == $group) | .name' "$candidates/import.json"
 }
 
+# FIELDS (a jq expression) of every set package the image installs: all but a
+# Stage 1 source, which the set carries for its raw Stage 1 alone.
+installed_set() {
+  jq -r ".packages[] | select(.group != \"stage1\") | $1" "$candidates/import.json"
+}
+
+# The set's boot loader (channel_set.py records the lane's): the package that
+# installs Stage 2 and the one whose raw Stage 1 the MacBook Neo enrolls. A
+# candidate set records none and takes m1n1-aurora for both.
+boot_loader() {
+  jq -r --arg part "$1" '.boot_loader[$part] // "m1n1-aurora"' "$candidates/import.json"
+}
+
+# What the image must never install: the policy's refused packages and the boot
+# loader package the set does not install, but never its own Stage 2 package
+# (candidate_set.py's refused_packages).
+refused_names() {
+  jq -r --arg stage2 "$(boot_loader stage2)" \
+    '[.refused_packages[], "m1n1-aurora", "aura"] | unique | map(select(. != $stage2)) | .[]' \
+    "$ROOT/builder/candidate-trust/policy.json"
+}
+
 # A set package's archive by its name or, for a channel set's runtime, its role
 # (omarchy-dev fills the omarchy role).
 candidate_archive() {
@@ -935,8 +957,8 @@ precheck_transaction() {
   printf '%s\n' "$resolved" >"$logs/precheck.log"
   while read -r name; do
     grep -Eq "^omarchy-candidates $name " <<<"$resolved" || fail "$name does not resolve from the candidate set"
-  done < <(jq -r '.packages[].name' "$candidates/import.json")
-  for refused in $(jq -r '.refused_packages[]' "$ROOT/builder/candidate-trust/policy.json"); do
+  done < <(installed_set '.name')
+  for refused in $(refused_names); do
     ! grep -Eq "^[^ ]+ $refused " <<<"$resolved" || fail "the package set pulls in the refused $refused"
   done
 }
@@ -1076,7 +1098,10 @@ install_apple_set() {
   installed=$(pacman --dbpath "$target/var/lib/pacman" -Q)
   while read -r name version; do
     grep -Fxq "$name $version" <<<"$installed" || fail "$name $version from the candidate set is not installed"
-  done < <(jq -r '.packages[] | "\(.name) \(.version)"' "$candidates/import.json")
+  done < <(installed_set '"\(.name) \(.version)"')
+  while read -r name; do
+    ! grep -Eq "^$name " <<<"$installed" || fail "$name is installed, but the set carries it only for its raw Stage 1"
+  done < <(candidate_names stage1)
   ! grep -Eq '^linux-asahi ' <<<"$installed" || fail "linux-asahi is installed beside $KERNEL"
 }
 
@@ -1409,17 +1434,35 @@ stage_recovery_app() {
     fail "could not stage the pinned Recovery app"
 }
 
-# Board payloads come from the same authenticated m1n1-aurora package as Stage 2.
+# Board payloads come from the set's authenticated boot loader packages.
 # The engine's per-board contract (BOARD_STAGE1, BOARD_STAGE2): the MacBook
 # Neo boots its raw Stage 1 as esp/aurora/stage1-j700.bin and takes
 # esp/m1n1/boot-j700.bin, the same bundle as m1n1/boot.bin, in its place.
-# Every other Mac drops boot-j700.bin.
+# Every other Mac drops boot-j700.bin. The raw Stage 1 is the installed boot
+# loader's, or, when the lane names a Stage 1 source apart from it (edge: aura
+# installs Stage 2, m1n1-aurora supplies the Neo's Stage 1), that source's,
+# read from its frozen archive, since it conflicts with the installed loader.
 stage_board_boot_payloads() {
-  local stage1="$target/usr/share/m1n1-aurora/stage1/m1n1-raw.bin"
+  local source path archive stage1
   local stage2="$target/boot/efi/m1n1/boot.bin"
-  [[ -s $stage1 && ! -L $stage1 && -s $stage2 && ! -L $stage2 ]] ||
-    fail "the image lacks matched m1n1-aurora Stage 1 and Stage 2 payloads for the MacBook Neo"
+  source=$(boot_loader stage1)
+  case $source in
+    m1n1-aurora) path=usr/share/m1n1-aurora/stage1/m1n1-raw.bin ;;
+    aura) path=usr/share/aura/stage1/aura-raw.bin ;;
+    *) fail "the set names an unknown Stage 1 source: $source" ;;
+  esac
   mkdir -p "$target/boot/efi/aurora" "$target/boot/efi/m1n1"
+  if [[ $source == "$(boot_loader stage2)" ]]; then
+    stage1="$target/$path"
+  else
+    archive=$(jq -r --arg name "$source" \
+      'first(.packages[] | select(.name == $name and .group == "stage1") | .filename) // empty' "$candidates/import.json")
+    [[ -n $archive ]] || fail "the set does not carry $source for its raw Stage 1"
+    stage1="$work/stage1-j700.bin"
+    bsdtar -xOf "$candidates/$archive" "$path" >"$stage1" || fail "could not read $source's raw Stage 1"
+  fi
+  [[ -s $stage1 && ! -L $stage1 && -s $stage2 && ! -L $stage2 ]] ||
+    fail "the image lacks matched $source Stage 1 and Stage 2 payloads for the MacBook Neo"
   install -m 0644 "$stage1" "$target/boot/efi/aurora/stage1-j700.bin"
   install -m 0644 "$stage2" "$target/boot/efi/m1n1/boot-j700.bin"
 }
@@ -1732,7 +1775,9 @@ write_provenance() {
     for name in "${TOOLCHAIN[@]}"; do
       printf 'toolchain=%s\n' "$(pacman -Q "$name" | tr ' ' '|')"
     done
-    jq -r '.packages[] | "candidate=\(.name)|\(.version)|\(.filename)|\(.sha256)"' "$candidates/import.json"
+    installed_set '"candidate=\(.name)|\(.version)|\(.filename)|\(.sha256)"'
+    jq -r '.packages[] | select(.group == "stage1") | "stage1_source=\(.name)|\(.version)|\(.filename)|\(.sha256)"' \
+      "$candidates/import.json"
     jq -r '.packages[] | select(.group == "runtime" and .source_commit != null) | "candidate_source=\(.name)|\(.source_commit)"' \
       "$candidates/import.json"
     printf 'hardware_setup=%s\n' "$hardware_setup"

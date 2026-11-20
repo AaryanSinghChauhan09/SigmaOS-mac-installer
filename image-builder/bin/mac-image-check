@@ -498,6 +498,12 @@ def runtime_providers(candidates: Path | None) -> dict[str, str]:
     summary = json.loads((Path(candidates) / "import.json").read_text())
     providers = {p["role"]: p["name"] for p in summary["packages"] if p.get("role", p["name"]) != p["name"]}
     providers.update({"uboot-asahi": "uboot-aurora"})
+    # A lane whose boot loader is aura installs it in m1n1-aurora's place (it provides m1n1-aurora).
+    stage2 = summary.get("boot_loader", {}).get("stage2", "m1n1-aurora")
+    if stage2 != "m1n1-aurora":
+        require(any(p["name"] == stage2 and p["group"] == "boot" for p in summary["packages"]),
+                f"the set's boot loader {stage2} is not among its boot packages")
+        providers["m1n1-aurora"] = stage2
     for name in ("aurora-audio", "alsa-ucm-conf-aurora", "speakerguardd", "omarchy-aurora-firmware"):
         require(any(p["name"] == name and p["group"] == "support" for p in summary["packages"]),
                 "Aurora support package is missing: " + name)
@@ -772,6 +778,13 @@ def check_provenance(lane: str, directory: Path) -> None:
         require(record is not None and record[2] == version and record[3] == "omarchy-candidates"
                 and record[4] == filename and record[5] == sha256,
                 f"PROVENANCE does not install the set's {name} from the candidate set")
+    # A Stage 1 source (an edge set's m1n1-aurora beside aura) is carried for its raw Stage 1 alone.
+    sources_ = [value.split("|") for value in fields.get("stage1_source", [])]
+    require(len(sources_) <= 1 and all(len(parts) == 4 and re.fullmatch(r"[0-9a-f]{64}", parts[3]) for parts in sources_),
+            "PROVENANCE has a malformed Stage 1 source")
+    for name, *_ in sources_:
+        require(name not in installed and name not in candidates,
+                f"PROVENANCE installs {name}, which the set carries only for its raw Stage 1")
     name, size, sha256 = fields["payload"][0].split("|")
     payload = directory / name
     require(payload.is_file() and PAYLOAD_NAME.fullmatch(name) is not None, f"{name} is not beside PROVENANCE")
