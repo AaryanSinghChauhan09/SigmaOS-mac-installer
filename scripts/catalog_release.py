@@ -515,13 +515,13 @@ def catalog_engine_digest(catalog: dict) -> str:
     models = catalog.get("models") if isinstance(catalog, dict) else None
     if not isinstance(models, list) or not models:
         raise Refusal("the catalog lists no models")
-    digests = {model.get("engineDigest") if isinstance(model, dict) else None for model in models}
-    if len(digests) != 1:
+    digests = [model.get("engineDigest") if isinstance(model, dict) else None for model in models]
+    for digest in digests:
+        if not isinstance(digest, str) or not ENGINE_DIGEST.fullmatch(digest):
+            raise Refusal(f"the catalog has a model whose engine digest is missing or malformed: {digest!r}")
+    if len(set(digests)) != 1:
         raise Refusal("the catalog's models pin different engines; a catalog pins exactly one engine")
-    digest = digests.pop()
-    if not isinstance(digest, str) or not ENGINE_DIGEST.fullmatch(digest):
-        raise Refusal(f"the catalog's engine digest is malformed: {digest}")
-    return digest
+    return digests[0]
 
 
 def check_engine_pin(channel: str, catalog: dict, allowed: str | None) -> str:

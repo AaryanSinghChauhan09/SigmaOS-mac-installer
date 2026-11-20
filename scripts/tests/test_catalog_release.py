@@ -1041,8 +1041,8 @@ class EngineGateTests(ReleaseTestCase):
             del missing["models"][-1]["engineDigest"]
             for name, broken, reason in (
                 ("mixed", mixed, "pin different engines"),
-                ("missing", missing, "pin different engines"),
-                ("non-string", dict(document, models=[dict(m, engineDigest=1) for m in document["models"]]), "malformed"),
+                ("missing", missing, "missing or malformed"),
+                ("non-string", dict(document, models=[dict(m, engineDigest=[1]) for m in document["models"]]), "malformed"),
                 ("bare hex", dict(document, models=[dict(m, engineDigest="5" * 64) for m in document["models"]]), "malformed"),
                 ("no models", dict(document, models=[]), "lists no models"),
             ):
@@ -1071,10 +1071,26 @@ class EngineGateTests(ReleaseTestCase):
             release.SOURCE_LOCK = saved
 
     def test_an_allowed_engine_never_waives_the_final_tag_refusal(self) -> None:
-        catalog = json.loads(self.catalog("stable", HELD_ENGINE, FINAL_ON_RC_IMAGE).read_text())
-        self.assertIn("engine_gate=held", release.check_engine_pin("stable", catalog, HELD_ENGINE))
-        with self.assertRaisesRegex(release.Refusal, "never promoted"):
-            release.check_promotion_source(catalog)
+        # The held rc catalog's image is a final tag built on rc; promoting it to stable stays refused in
+        # prepare and in the signing job's promotion gate, though the engine gate passes with its digest.
+        source = self.catalog("rc", HELD_ENGINE, FINAL_ON_RC_IMAGE)
+        self.assertEqual(self.sign(source, out="rc-signed").returncode, 0)
+        envelope = self.directory / "rc-signed" / "catalog-rc.signed.json"
+        host = self.directory / "scratch-host"
+        published = self.run_tool("publish", "--channel", "rc", "--envelope", str(envelope),
+                                  "--host", f"scratch:{host}", "--trust-root", str(self.trust_root))
+        self.assertEqual(published.returncode, 0, published.stderr)
+        self.assert_refused(self.run_tool("promote", "--channel", "stable", "--source", "rc", "--host", f"scratch:{host}",
+                                          "--trust-root", str(self.trust_root), "--now", LATER,
+                                          "--out", str(self.directory / "promoted")), "never promoted")
+        document = json.loads(source.read_text())
+        promoted = self.write("catalog-stable.json", dict(document, sequence=document["sequence"] + 1, issuedAt=LATER))
+        engine = self.check(promoted, HELD_ENGINE)
+        self.assertEqual(engine.returncode, 0, engine.stderr)
+        self.assertIn("engine_gate=held channel=stable", engine.stdout)
+        self.assert_refused(self.run_tool("check-promotion", "--channel", "stable", "--source-channel", "rc",
+                                          "--catalog", str(promoted), "--source", str(envelope),
+                                          "--trust-root", str(self.trust_root)), "never promoted")
 
     def test_every_signing_path_runs_the_engine_gate_before_approval_and_before_the_key(self) -> None:
         sign = SIGN_WORKFLOW.read_text()
