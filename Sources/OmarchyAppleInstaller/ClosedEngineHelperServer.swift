@@ -320,6 +320,14 @@
           }
           return OmarchyRemovalReply(completed: true, message: message)
         } catch {
+          if (error as? RemovalFailure)?.nothingDeleted == true,
+            (try? FileManager.default.removeItem(at: journalURL)) != nil
+          {
+            // Once the file is gone the reply says so. A failed fsync can at
+            // worst bring the record back, which only blocks until reviewed.
+            phase = "checking"
+            try? synchronizeDirectory(workingDirectory)
+          }
           let detail = (error as? RemovalFailure)?.message ?? "macOS could not complete removal."
           let message: String
           if phase == "checking" {

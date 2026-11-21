@@ -11,7 +11,8 @@ no disk mutation. Credentials are not written to the removal journal.
 
 The booted internal macOS physical store must precede one complete Omarchy group:
 Apple APFS startup container (at most 4 GiB, exactly Omarchy System/Data and
-Preboot/Recovery volumes), Omarchy EFI, Linux boot, Linux root. The four removal
+Preboot/Recovery volumes, plus at most one ungrouped Update volume that Software
+Update adds), Omarchy EFI, Linux boot, Linux root. The four removal
 partitions must be contiguous. Apple ISC must precede macOS and Apple Recovery
 must follow Omarchy. Gaps immediately before and after Omarchy are reclaimed too.
 
