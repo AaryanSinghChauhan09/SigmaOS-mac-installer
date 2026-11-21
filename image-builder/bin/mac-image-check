@@ -138,11 +138,9 @@ def _module(name: str):
 
 
 def _engine_macho():
-    """The engine's own Mach-O Stage 1 test (Engine/overlay/src/omarchy_macho.py)."""
-    spec = importlib.util.spec_from_file_location("omarchy_macho", ROOT.parent / "Engine/overlay/src/omarchy_macho.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    """The engine's own Mach-O Stage 1 test: builder/omarchy_macho.py, a byte-identical copy
+    of Engine/overlay/src/omarchy_macho.py, since the build container mounts only image-builder/."""
+    return _module("omarchy_macho")
 
 
 class CheckError(RuntimeError):

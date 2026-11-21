@@ -336,6 +336,12 @@ class ChannelBuildDirectoryTest(unittest.TestCase):
         fixtures.write_payload(self.out / NAME, check.BOOT_UUID, check.ROOT_UUID, recovery_app=self.recovery,
                                extra={name: data for name, data in extra.items() if data is not None})
 
+    def test_the_builders_macho_check_is_the_engines(self):
+        # The build container mounts only image-builder/, so the check carries a copy.
+        self.assertEqual((ROOT / "builder/omarchy_macho.py").read_bytes(),
+                         (ROOT.parent / "Engine/overlay/src/omarchy_macho.py").read_bytes(),
+                         "builder/omarchy_macho.py must stay a copy of the engine's")
+
     def test_a_payload_may_carry_the_m4_macho_stage1_and_confined_stage2(self):
         self.build()
         self.confined_payload()
