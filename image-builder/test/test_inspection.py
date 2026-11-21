@@ -10,6 +10,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import zlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -19,7 +20,7 @@ inspection = fixtures.load("inspection", "builder/inspection.py")
 inspection.OWNER_UID = os.geteuid()
 CHECKS = ("candidate-versions", "runtime-sources", "boot-loader", "minimum-versions", "refused-packages", "apple-packages", "installed-boot-payloads",
           "candidate-files", "package-mtrees",
-          "m1n1-stage2", "aurora-device-trees", "limine-uki", "embedded-initramfs", "boot-splash", "boot-maintenance",
+          "m1n1-stage2", "ctxr-uboot", "aurora-device-trees", "limine-uki", "embedded-initramfs", "boot-splash", "boot-maintenance",
           "image-target", "first-boot", "snapshots", "pacman-config", "installed-system", "speaker-routing", "factory")
 # Fixture roots live on whatever filesystem the tests run on: these paths stand in for btrfs subvolumes.
 SUBVOLUMES: set[Path] = set()
@@ -133,6 +134,23 @@ class InspectionTest(unittest.TestCase):
         summary.write_text(__import__("json").dumps(value))
         with self.assertRaisesRegex(inspection.InspectionError, "retired hardware profile"):
             inspection.Candidates(imported)
+
+    def test_an_image_without_the_confined_stage2_needs_no_ctxr_uboot(self):
+        report = self.inspect()
+        self.assertEqual(report["checks"]["ctxr-uboot"]["result"], "passed")
+        self.assertIn("no confined Stage 2", report["checks"]["ctxr-uboot"]["detail"])
+
+    def test_the_confined_stage2_needs_a_uboot_that_reads_the_ctxr_window(self):
+        # A J616s booted on one CPU with uboot-aurora d30213e, which predates u-boot#32.
+        stage2 = (self.root / "boot/efi/m1n1/boot.bin").read_bytes()
+        (self.root / "boot/efi/m1n1/boot-ctxr.bin").write_bytes(stage2)
+        self.assertFails("ctxr-uboot", "aurora-silicon/u-boot#32")
+        candidates = inspection.Candidates(self.candidates)
+        path = "usr/lib/asahi-boot/u-boot-nodtb.bin"
+        with mock.patch.object(inspection.Candidates, "member",
+                               lambda self, name, member: b"u-boot " + inspection.CTXR_WINDOW_PROPERTY
+                               if member == path else candidates.member(name, member)):
+            self.assertIn("u-boot#32", inspection.check_ctxr_uboot(self.root, inspection.Candidates(self.candidates)))
 
     def test_the_j700_boot_payloads_must_be_the_sets(self):
         for rel, data in (("boot/efi/aurora/stage1-j700.bin", b"another stage 1"),

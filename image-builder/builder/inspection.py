@@ -337,6 +337,27 @@ def check_installed_payloads(root: Path, candidates: Candidates) -> str:
     return f"m1n1, U-Boot, the kernel and {len(candidates.dtbs())} device trees match the set's archives"
 
 
+# What U-Boot with aurora-silicon/u-boot#32 (62ee4709) carries: it reads the
+# window an execute-window Mac's kernel must run in. Without it U-Boot places
+# the kernel wherever its allocator likes, and the kernel keeps every CPU but
+# the boot CPU offline (a J616s on the confined Stage 2, 2026-11-20).
+CTXR_WINDOW_PROPERTY = b"aurora,ctxr-exec-window"
+
+
+def check_ctxr_uboot(root: Path, candidates: Candidates) -> str:
+    """An image that boots M4-and-later Macs through the confined Stage 2
+    (esp/m1n1/boot-ctxr.bin) carries a U-Boot that keeps Linux in the window."""
+    confined = root / "boot/efi/m1n1/boot-ctxr.bin"
+    if not confined.exists() and not confined.is_symlink():
+        return "no confined Stage 2: no execute-window Mac boots this image"
+    path = "usr/lib/asahi-boot/u-boot-nodtb.bin"
+    uboot = candidates.member(candidates.boot_owners[path], path)
+    require(CTXR_WINDOW_PROPERTY in uboot,
+            "the image boots execute-window Macs, but its U-Boot does not read "
+            "aurora,ctxr-exec-window (aurora-silicon/u-boot#32): their kernels would run on the boot CPU alone")
+    return "U-Boot keeps Linux inside the CTXR window (aurora-silicon/u-boot#32)"
+
+
 def m1n1_stage2(root: Path, candidates: Candidates, report: dict) -> str:
     """m1n1/boot.bin is the set's m1n1, then every Aurora device tree in C
     order, then the set's U-Boot gzipped, then m1n1 options only."""
@@ -842,6 +863,7 @@ def inspect(root: Path, candidates_dir: Path, channel: str, factory: Path | None
         ("candidate-files", lambda: check_candidate_files(root, candidates, report)),
         ("package-mtrees", lambda: check_package_mtrees(root, candidates)),
         ("m1n1-stage2", lambda: m1n1_stage2(root, candidates, report)),
+        ("ctxr-uboot", lambda: check_ctxr_uboot(root, candidates)),
         ("aurora-device-trees", lambda: check_supported_models(root, candidates, report, policy, channel)),
         ("limine-uki", lambda: check_limine(root, candidates, report)),
         ("embedded-initramfs", lambda: check_embedded_initramfs(root, report)),
