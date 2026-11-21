@@ -1239,6 +1239,22 @@ class AsahiStage1AdapterTests(unittest.TestCase):
             adapter.preflight(self.plan)
         self.assertEqual(installer.dutil.add_calls, [])
 
+    def test_a_macho_stage1_recovery_cannot_pad_is_refused_before_any_disk_change(self):
+        # expandExecuteWindow would refuse these after partitioning.
+        for name, image in (("an 0x804 entry", macho_stage1(j700_stage1(), entry_offset=0x804)),
+                            ("no AURALOAD", macho_stage1(j700_stage1(), load_header=None))):
+            with self.subTest(name):
+                self.setUp()
+                with zipfile.ZipFile(self.payload, "a") as archive:
+                    archive.writestr("esp/aurora/stage1.macho", image)
+                    archive.writestr("esp/m1n1/boot-ctxr.bin", b"m1n1 ctxr")
+                self._native_recovery_metadata()
+                installer, adapter = self._on_chip("j713ap", 0x8132)
+                with patch("omarchy_asahi.omarchy_recovery.validate_payload"), \
+                        self.assertRaisesRegex(AsahiAdapterError, "Mach-O Stage 1 is invalid"):
+                    adapter.preflight(self.plan)
+                self.assertEqual(installer.dutil.add_calls, [])
+
     def test_a_raw_stage1_in_the_macho_slot_is_refused(self):
         with zipfile.ZipFile(self.payload, "a") as archive:
             archive.writestr("esp/aurora/stage1.macho", j700_stage1())

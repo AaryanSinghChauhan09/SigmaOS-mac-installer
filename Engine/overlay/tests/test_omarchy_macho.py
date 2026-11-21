@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 from pathlib import Path
+import struct
 import sys
 import unittest
 
@@ -38,6 +39,28 @@ class MachOLayoutTests(unittest.TestCase):
         image[index:index + 14] = b"__PRELINK_INFX"
         with self.assertRaisesRegex(macho.MachOError, "no __PRELINK_INFO"):
             macho.layout(bytes(image))
+
+
+class ExecuteWindowTests(unittest.TestCase):
+    """Recovery's expandExecuteWindow rules, checked before any disk change."""
+
+    def test_an_aura_boot_object_can_be_padded(self):
+        macho.check_execute_window(macho_stage1(RAW))
+
+    def test_what_recovery_cannot_pad_is_refused(self):
+        cases = {
+            "does not enter aura at its entry point": macho_stage1(RAW, entry_offset=0x804),
+            "does not start with aura": macho_stage1(RAW, load_header=None),
+            "does not fit the room kept for it": macho_stage1(RAW, load_size=(16 << 20) + 1),
+            "cannot be moved": macho_stage1(RAW, commands_extra=struct.pack("<II", 0x26, 16) + bytes(8)),
+            "has a symbol table": macho_stage1(RAW, commands_extra=struct.pack("<II", 0x2, 24) + b"\1" + bytes(15)),
+        }
+        for message, image in cases.items():
+            with self.subTest(message), self.assertRaisesRegex(macho.MachOError, message):
+                macho.check_execute_window(image)
+
+    def test_an_empty_symbol_table_is_allowed(self):
+        macho.check_execute_window(macho_stage1(RAW, commands_extra=struct.pack("<II", 0x2, 24) + bytes(16)))
 
 
 if __name__ == "__main__":

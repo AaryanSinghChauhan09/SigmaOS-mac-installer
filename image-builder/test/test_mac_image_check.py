@@ -346,8 +346,6 @@ class ChannelBuildDirectoryTest(unittest.TestCase):
         self.build()
         self.confined_payload()
         check.check_payload("edge", self.out / NAME, self.out / "installer_data.json")
-        self.confined_payload(**{"esp/m1n1/boot-ctxr-j713.bin": b"m1n1 j713"})
-        check.check_payload("edge", self.out / NAME, self.out / "installer_data.json")
         # aura writes CPU_SUBTYPE_ARM64E with kernel capability bits; a plain arm64 object passes too.
         for subtype in (0xC0000002, 0x2, 0):
             with self.subTest(subtype=hex(subtype)):
@@ -367,10 +365,14 @@ class ChannelBuildDirectoryTest(unittest.TestCase):
             "not a fileset boot object": {"esp/aurora/stage1.macho": self.boot_object(filetype=2)},
             "it has no __TEXT segment": {"esp/aurora/stage1.macho": self.linker_macho()},
             "16 MiB slot": {"esp/m1n1/boot-ctxr.bin": bytes((16 << 20) + 1)},
+            "esp/m1n1/boot-ctxr-j713.bin is a per-board confined Stage 2": {"esp/m1n1/boot-ctxr-j713.bin": b"m1n1 j713"},
             "__TEXT_BOOT_EXEC, so iBoot would start SPTM": {"esp/aurora/stage1.macho": self.boot_object(
                 extra_segments=(("__TEXT_BOOT_EXEC", 0x4000),))},
             "its entry point is outside __TEXT_EXEC": {"esp/aurora/stage1.macho": self.boot_object(
                 entry_offset=0x10000)},
+            "does not enter aura at its entry point": {"esp/aurora/stage1.macho": self.boot_object(
+                entry_offset=0x804)},
+            "does not start with aura": {"esp/aurora/stage1.macho": self.boot_object(load_header=None)},
             "duplicate segment __LINKEDIT": {"esp/aurora/stage1.macho": self.boot_object(
                 extra_segments=(("__LINKEDIT", 0x4000),))},
             "is not file-backed at its virtual offset": {

@@ -95,6 +95,117 @@ def layout(data):
     return segments, entry
 
 
+PAGE = 0x4000
+# Recovery's AuraStage1.swift (ExecuteWindow, MachOBootObject.expandExecuteWindow).
+RAW_ENTRY_OFFSET = 0x800
+LOAD_HEADER_OFFSET = 0x808
+AURA_SLOT = 16 << 20
+EXECUTE_WINDOW = 128 << 20
+WINDOW_ALIGNMENT = 2 << 20
+LC_SYMTAB, LC_DYSYMTAB, LC_UUID, LC_BUILD_VERSION = 0x2, 0xB, 0x1B, 0x32
+LC_DYLD_CHAINED_FIXUPS, LC_FILESET_ENTRY = 0x80000034, 0x80000035
+
+
+def check_execute_window(data, window=EXECUTE_WINDOW, slot=AURA_SLOT):
+    """MachOError unless Recovery's expandExecuteWindow can pad DATA's __TEXT_EXEC.
+
+    A check-only walk of the same rules, so an object Recovery would refuse after
+    partitioning is refused before any disk change: entered at aura's entry point,
+    __TEXT_EXEC starting with aura's load header and fitting the slot kept for it,
+    page-aligned, fileset members before __TEXT_EXEC, no chained fixups or symbol
+    table, and only load commands Recovery knows how to move.
+    """
+    data = bytes(data)
+    segments, entry = layout(data)
+
+    def u32(offset):
+        if offset < 0 or offset + 4 > len(data):
+            raise MachOError("truncated")
+        return struct.unpack_from("<I", data, offset)[0]
+
+    def u64(offset):
+        return u32(offset) | u32(offset + 4) << 32
+
+    code = segments["__TEXT_EXEC"]
+    if entry != code.vmaddr + RAW_ENTRY_OFFSET:
+        raise MachOError("it does not enter aura at its entry point")
+    start = code.fileoff
+    if start + 0x820 > len(data) or data[start + LOAD_HEADER_OFFSET:start + LOAD_HEADER_OFFSET + 8] != b"AURALOAD":
+        raise MachOError("__TEXT_EXEC does not start with aura")
+    if u64(start + LOAD_HEADER_OFFSET + 16) > slot or code.vmsize > slot:
+        raise MachOError("aura does not fit the room kept for it")
+    growth = slot + (WINDOW_ALIGNMENT - PAGE) + window - code.vmsize
+    code_end = code.vmaddr + code.vmsize
+    file_end = code.fileoff + code.filesize
+    if file_end % PAGE or code.vmaddr % PAGE:
+        raise MachOError("__TEXT_EXEC is not page-aligned")
+
+    def movable32(offset):
+        if offset + growth > 0xFFFFFFFF:
+            raise MachOError("its execute window is too large")
+
+    def movable64(value):
+        if value + growth > 0xFFFFFFFFFFFFFFFF:
+            raise MachOError("an address or offset is out of range")
+
+    # Recovery re-reads the padded object, whose load commands must still end
+    # before the bytes it moves.
+    if 32 + u32(20) > file_end:
+        raise MachOError("load commands are truncated")
+
+    headers, index = [0], 0
+    while index < len(headers):
+        if len(set(headers)) != len(headers):
+            raise MachOError("a fileset member repeats")
+        header = headers[index]
+        index += 1
+        if u32(header) != MH_MAGIC_64:
+            raise MachOError("a fileset member has no Mach-O header")
+        offset = header + 32
+        for _ in range(u32(header + 16)):
+            command, length = u32(offset), u32(offset + 4)
+            if length < 8 or offset + length > len(data):
+                raise MachOError("malformed load command")
+            if command == LC_SEGMENT_64:
+                if length < 72:
+                    raise MachOError("malformed segment")
+                vmaddr, vmsize = u64(offset + 24), u64(offset + 32)
+                name = data[offset + 8:offset + 24].split(b"\0", 1)[0].decode("utf-8", "replace")
+                if name == "__TEXT_EXEC":
+                    if (vmaddr, vmsize) != (code.vmaddr, code.vmsize):
+                        raise MachOError("two headers disagree about __TEXT_EXEC")
+                elif vmaddr >= code_end:
+                    movable64(vmaddr)
+                    movable64(u64(offset + 40))
+                    sections = u32(offset + 64)
+                    if length != 72 + 80 * sections:
+                        raise MachOError("malformed segment")
+                    for section in range(sections):
+                        movable64(u64(offset + 72 + 80 * section + 32))
+                        file_offset = u32(offset + 72 + 80 * section + 48)
+                        if file_offset:
+                            movable32(file_offset)
+                elif vmaddr + vmsize > code.vmaddr:
+                    raise MachOError(f"{name} overlaps __TEXT_EXEC")
+            elif command == LC_DYLD_CHAINED_FIXUPS:
+                fixups = u32(offset + 8)
+                starts = fixups + u32(fixups + 4)
+                if any(u32(starts + 4 + 4 * segment) for segment in range(u32(starts))):
+                    raise MachOError("it has chained fixups")
+                if fixups >= file_end:
+                    movable32(fixups)
+            elif command == LC_FILESET_ENTRY:
+                if not (u64(offset + 8) < code.vmaddr and u64(offset + 16) < code.fileoff):
+                    raise MachOError("a fileset member is not before __TEXT_EXEC")
+                headers.append(u64(offset + 16))
+            elif command in (LC_SYMTAB, LC_DYSYMTAB):
+                if any(data[offset + 8:offset + length]):
+                    raise MachOError("it has a symbol table")
+            elif command not in (LC_UNIXTHREAD, LC_UUID, LC_BUILD_VERSION):
+                raise MachOError("it has a load command that cannot be moved")
+            offset += length
+
+
 def read_only_size(data):
     """The kcrz kmutil should derive: the load address to the end of __TEXT_EXEC."""
     code = layout(data)[0]["__TEXT_EXEC"]

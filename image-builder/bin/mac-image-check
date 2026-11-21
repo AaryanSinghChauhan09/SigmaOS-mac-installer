@@ -251,15 +251,21 @@ def check_confined_boot_payloads(archive: zipfile.ZipFile, members: dict) -> Non
         return
     require(MACHO_STAGE1 in members, "boot-ctxr files need esp/aurora/stage1.macho, the Stage 1 that loads them")
     require(confined, "esp/aurora/stage1.macho needs esp/m1n1/boot-ctxr.bin, the Stage 2 it loads")
+    # The engine prefers a board's own boot-ctxr-<board>.bin, but inspection holds only the
+    # shared copy to the inspected bundle, and the builder makes no per-board copy.
+    boards = [name for name in confined if name != "esp/m1n1/boot-ctxr.bin"]
+    require(not boards, ", ".join(boards) + " is a per-board confined Stage 2, which this builder does not make "
+            "and inspection does not check")
     stage1 = archive.read(MACHO_STAGE1)
-    # The engine's own test (omarchy_macho.layout), so an image never carries a Stage 1
-    # the installer refuses: a 64-bit Arm fileset with kmutil's segments, each file-backed
-    # at its virtual offset, no sized __TEXT_BOOT_EXEC, entered inside __TEXT_EXEC. The CPU
+    # The engine's own test (omarchy_macho.check_execute_window), so an image never carries
+    # a Stage 1 the installer or the native Recovery refuses: a 64-bit Arm fileset with
+    # kmutil's segments, each file-backed at its virtual offset, no sized __TEXT_BOOT_EXEC,
+    # entered at aura's entry point, and an __TEXT_EXEC Recovery can pad. The CPU
     # subtype is not held: aura's macho_boot_object.py writes CPU_SUBTYPE_ARM64E with the
     # kernel capability bits (0xC0000002).
     macho = _engine_macho()
     try:
-        macho.layout(stage1)
+        macho.check_execute_window(stage1)
     except macho.MachOError as error:
         raise CheckError(f"the Mach-O Stage 1 is not a boot object the engine accepts: {error}"
                          " (aura's build/aura-boot.macho, not its linker build/aura.macho)") from None

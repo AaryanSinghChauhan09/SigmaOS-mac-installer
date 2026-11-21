@@ -547,8 +547,13 @@ def confined_stage1(device_class, chip_id, members):
 
 
 def read_macho_stage1(confined, read_member):
-    """The Mach-O Stage 1 from the payload, refused unless fillable."""
+    """The Mach-O Stage 1 from the payload, refused unless fillable and unless the
+    native Recovery can pad its execute window (before any disk change)."""
     image = read_member(confined.member)
+    try:
+        omarchy_macho.check_execute_window(image)
+    except omarchy_macho.MachOError as error:
+        raise AsahiAdapterError(f"Aurora Mach-O Stage 1 is invalid: {error}") from error
     fill_macho_stage1(image, PLACEHOLDER_UUID, CONFINED_STAGE2)
     return image
 
