@@ -504,7 +504,8 @@ def check_limine(root: Path, candidates: Candidates, report: dict) -> str:
 # (omarchy-mac-boot 92-omarchy-mac-display-gate.conf). An image's initramfs is
 # built away from the Mac, so autodetect cannot pick them: without the M4 PHY a
 # J616s's first boot gave up on the gate and its external DCPs failed with -110.
-DISPLAY_GATE_MODULES = ("phy-apple-t6040-usb2", "mux-apple-display-crossbar", "atc-t6050-dp", "phy-apple-atc")
+DISPLAY_GATE_MODULES = ("phy-apple-t6040-usb2", "mux-apple-display-crossbar", "atc-t6050-dp", "phy-apple-atc",
+                        "phy-apple-dptx")
 MODULE_SUFFIX = re.compile(r"\.ko(\.(zst|xz|gz))?$")
 
 

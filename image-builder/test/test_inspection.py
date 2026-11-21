@@ -149,13 +149,14 @@ class InspectionTest(unittest.TestCase):
     def test_the_display_gate_modules_a_kernel_ships_must_be_in_the_initramfs(self):
         # out6: the J616s DP PHY was on the root only, so the first boot's display gate gave up.
         shipped = [f"usr/lib/modules/{fixtures.RELEASE}/kernel/drivers/phy/apple/{m}.ko.zst"
-                   for m in ("phy-apple-t6040-usb2", "mux-apple-display-crossbar", "atc_t6050_dp", "phy-apple-atc")]
+                   for m in ("phy-apple-t6040-usb2", "mux-apple-display-crossbar", "atc_t6050_dp", "phy-apple-atc",
+                             "phy-apple-dptx")]
         candidates = inspection.Candidates(self.candidates)
         listing = candidates.listing(inspection.KERNEL)
         candidates._listings[inspection.KERNEL] = listing + shipped
         with self.assertRaisesRegex(inspection.InspectionError, "lacks the display gate's .*phy-apple-t6040-usb2"):
             inspection.check_display_gate_modules(self.root, candidates)
-        self.uki_with_initramfs_modules("mux-apple-display-crossbar", "atc-t6050-dp", "phy-apple-atc")
+        self.uki_with_initramfs_modules("mux-apple-display-crossbar", "atc-t6050-dp", "phy-apple-atc", "phy-apple-dptx")
         with self.assertRaisesRegex(inspection.InspectionError, r"lacks the display gate's phy-apple-t6040-usb2 \("):
             inspection.check_display_gate_modules(self.root, candidates)
         self.uki_with_initramfs_modules("phy_apple_t6040_usb2")
