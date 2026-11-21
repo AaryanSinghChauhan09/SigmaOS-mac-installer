@@ -412,6 +412,29 @@
       XCTAssertFalse(disk.state.containers.contains { $0.storeUUID == F.alarmInstall.stub })
     }
 
+    func testAnAuraMachOStubWithAnUpdateVolumeIsRecognisedAndRemovedStubFirst() throws {
+      // An M4 (J616s) install that Software Update gave one ungrouped Update volume.
+      var snapshot = F.neoMacos26()
+      let index = snapshot.containers.firstIndex { $0.storeUUID == F.convergedInstall.stub }!
+      let stub = snapshot.containers[index]
+      snapshot.containers[index] = RemovalContainer(
+        uuid: stub.uuid, storeUUID: stub.storeUUID,
+        volumes: stub.volumes + [RemovalVolume(uuid: F.id(997), name: "Update", roles: ["Update"])])
+      let disk = FakeRemovalDisk(snapshot, install: F.convergedInstall)
+      disk.files!.stubBootObject = Self.auraBootObject(esp: F.convergedInstall.esp.lowercased())
+      let plan = try OmarchyRemovalPlan(disks: disk)
+      XCTAssertEqual(plan.kind, .installation)
+      XCTAssertEqual(
+        plan.members.map(\.uuid),
+        [F.convergedInstall.stub, F.convergedInstall.esp] + F.convergedInstall.linux)
+      var phases = [String]()
+      try OmarchyRemovalExecutor(disks: disk).execute(plan) { phases.append($0) }
+      XCTAssertEqual(disk.operations.first, "container:\(F.convergedInstall.stub)")
+      XCTAssertEqual(phases.last, "complete")
+      XCTAssertFalse(disk.state.partitions.contains { plan.members.contains($0) })
+      XCTAssertFalse(disk.state.containers.contains { $0.storeUUID == F.convergedInstall.stub })
+    }
+
     func testAStubWithAVolumeRemovalDoesNotKnowIsRefusedByThatVolume() {
       var snapshot = F.alarm()
       let index = snapshot.containers.firstIndex { $0.storeUUID == F.alarmInstall.stub }!
