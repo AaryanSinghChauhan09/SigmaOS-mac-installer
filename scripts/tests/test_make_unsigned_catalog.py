@@ -255,7 +255,7 @@ class CatalogGeneratorTests(unittest.TestCase):
     def test_refused_and_unknown_macs_are_rejected_with_a_reason(self) -> None:
         for identifier, fragment in (
             ("apple,j575d", "no j575dap device or T6032 chip"),
-            ("apple,j614s", "M4 and later"),
+            ("apple,j614s", "has been tried on a J614s"),
             ("apple,j604", "not in scripts/supported-models.json"),
         ):
             document = json.loads(json.dumps(self.inputs))
