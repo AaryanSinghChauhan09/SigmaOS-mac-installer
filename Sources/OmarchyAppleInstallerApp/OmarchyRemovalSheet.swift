@@ -299,13 +299,7 @@ struct OmarchyRemovalSheet: View {
     if !keepingAccount {
       // No model is refused by name; removal recognises an installation by
       // its own records on any Mac the installer could have installed.
-      let blocked = false
-      switch RemovalHelperStart(
-        helper: await InstallerHelperSetup.probeDisplay(), blockedModel: blocked)
-      {
-      case .blockedModel:
-        message = PlainLanguage.removalBlockedModel
-        return
+      switch RemovalHelperStart(helper: await InstallerHelperSetup.probeDisplay()) {
       case .busy:
         message = PlainLanguage.removalServiceBusy
         return
