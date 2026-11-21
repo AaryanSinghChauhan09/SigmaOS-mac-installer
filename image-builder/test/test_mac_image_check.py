@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fixtures  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+MACHO_FIXTURE = fixtures.load("macho_fixture", "../Engine/overlay/tests/macho_fixture.py")
 loader = importlib.machinery.SourceFileLoader("mac_image_check", str(ROOT / "bin/mac-image-check"))
 spec = importlib.util.spec_from_loader("mac_image_check", loader)
 check = importlib.util.module_from_spec(spec)
@@ -313,14 +314,19 @@ class ChannelBuildDirectoryTest(unittest.TestCase):
                     check.check_payload("edge", self.out / NAME, self.out / "installer_data.json")
 
     @staticmethod
-    def boot_object(subtype=0xC0000002, names=("__TEXT", "__TEXT_EXEC", "__PRELINK_INFO", "__LINKEDIT"), sized=()):
-        """An aura-shaped fileset boot object (tools/macho_boot_object.py's segments), or, with other
-        NAMES, a linker-style Mach-O like aura's build/aura.macho (_HDR, TEXT, RODA, DATA, PYLD).
-        Segments in SIZED get a nonzero vmsize and filesize."""
-        commands = b"".join(struct.pack("<II16sQQQQiiII", 0x19, 72, name.encode(), 0, 0x4000 * (name in sized), 0,
-                                        0x4000 * (name in sized), 5, 5, 0, 0)
-                            for name in names)
-        header = struct.pack("<IIIIIIII", 0xFEEDFACF, 0x0100000C, subtype, 12, len(names), len(commands), 0, 0)
+    def boot_object(subtype=0, **changes):
+        """The engine tests' aura-shaped fileset boot object (Engine/overlay/tests/macho_fixture.py),
+        with CPU subtype SUBTYPE."""
+        data = bytearray(MACHO_FIXTURE.macho_stage1(fixtures.raw_stage1(), **changes))
+        struct.pack_into("<I", data, 8, subtype)
+        return bytes(data)
+
+    @staticmethod
+    def linker_macho():
+        """aura edgeB2's packaged usr/share/aura/stage1/aura.macho: a fileset header, linker segments."""
+        names = ("_HDR", "TEXT", "RODA", "DATA", "PYLD")
+        commands = b"".join(MACHO_FIXTURE.segment(name, 0, 0, 0, 0) for name in names)
+        header = struct.pack("<IIIIIIII", 0xFEEDFACF, 0x0100000C, 2, 12, len(names), len(commands), 0, 0)
         return header + commands + fixtures.raw_stage1()
 
     def confined_payload(self, **changes):
@@ -343,7 +349,7 @@ class ChannelBuildDirectoryTest(unittest.TestCase):
                 check.check_payload("edge", self.out / NAME, self.out / "installer_data.json")
         # An empty __TEXT_BOOT_EXEC gives kcbz 0, as the engine allows.
         self.confined_payload(**{"esp/aurora/stage1.macho": self.boot_object(
-            names=("__TEXT", "__TEXT_EXEC", "__TEXT_BOOT_EXEC", "__PRELINK_INFO", "__LINKEDIT"))})
+            extra_segments=(("__TEXT_BOOT_EXEC", 0),))})
         check.check_payload("edge", self.out / NAME, self.out / "installer_data.json")
 
     def test_the_m4_boot_payloads_are_refused_unless_matched_and_well_formed(self):
@@ -351,14 +357,18 @@ class ChannelBuildDirectoryTest(unittest.TestCase):
         cases = {
             "need esp/aurora/stage1.macho": {"esp/aurora/stage1.macho": None},
             "needs esp/m1n1/boot-ctxr.bin": {"esp/m1n1/boot-ctxr.bin": None},
-            "not an Arm64 fileset": {"esp/aurora/stage1.macho": fixtures.raw_stage1()},
-            # aura edgeB2's packaged usr/share/aura/stage1/aura.macho: a fileset header, linker segments.
-            "lacks __TEXT, __TEXT_EXEC, __PRELINK_INFO, __LINKEDIT": {
-                "esp/aurora/stage1.macho": self.boot_object(0x2, ("_HDR", "TEXT", "RODA", "DATA", "PYLD"))},
+            "not a 64-bit Arm Mach-O image": {"esp/aurora/stage1.macho": fixtures.raw_stage1()},
+            "not a fileset boot object": {"esp/aurora/stage1.macho": self.boot_object(filetype=2)},
+            "it has no __TEXT segment": {"esp/aurora/stage1.macho": self.linker_macho()},
             "16 MiB slot": {"esp/m1n1/boot-ctxr.bin": bytes((16 << 20) + 1)},
             "__TEXT_BOOT_EXEC, so iBoot would start SPTM": {"esp/aurora/stage1.macho": self.boot_object(
-                names=("__TEXT", "__TEXT_EXEC", "__TEXT_BOOT_EXEC", "__PRELINK_INFO", "__LINKEDIT"),
-                sized=("__TEXT_BOOT_EXEC",))},
+                extra_segments=(("__TEXT_BOOT_EXEC", 0x4000),))},
+            "its entry point is outside __TEXT_EXEC": {"esp/aurora/stage1.macho": self.boot_object(
+                entry_offset=0x10000)},
+            "duplicate segment __LINKEDIT": {"esp/aurora/stage1.macho": self.boot_object(
+                extra_segments=(("__LINKEDIT", 0x4000),))},
+            "is not file-backed at its virtual offset": {
+                "esp/aurora/stage1.macho": self.boot_object()[:0x8000]},
         }
         for message, changes in cases.items():
             with self.subTest(message):

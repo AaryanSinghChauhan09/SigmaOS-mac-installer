@@ -137,6 +137,14 @@ def _module(name: str):
     return module
 
 
+def _engine_macho():
+    """The engine's own Mach-O Stage 1 test (Engine/overlay/src/omarchy_macho.py)."""
+    spec = importlib.util.spec_from_file_location("omarchy_macho", ROOT.parent / "Engine/overlay/src/omarchy_macho.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class CheckError(RuntimeError):
     pass
 
@@ -246,31 +254,17 @@ def check_confined_boot_payloads(archive: zipfile.ZipFile, members: dict) -> Non
     require(MACHO_STAGE1 in members, "boot-ctxr files need esp/aurora/stage1.macho, the Stage 1 that loads them")
     require(confined, "esp/aurora/stage1.macho needs esp/m1n1/boot-ctxr.bin, the Stage 2 it loads")
     stage1 = archive.read(MACHO_STAGE1)
-    # The engine's own test (omarchy_macho.layout): a 64-bit Arm Mach-O fileset with the
-    # segments kmutil requires. The CPU subtype is not held: aura's macho_boot_object.py
-    # writes CPU_SUBTYPE_ARM64E with the kernel capability bits (0xC0000002).
-    require(len(stage1) >= 32 and struct.unpack_from("<II", stage1, 0) == (0xFEEDFACF, 0x0100000C)
-            and struct.unpack_from("<I", stage1, 12)[0] == 12,
-            "the Mach-O Stage 1 is not an Arm64 fileset boot object")
-    count, size = struct.unpack_from("<II", stage1, 16)
-    require(32 + size <= len(stage1), "the Mach-O Stage 1's load commands are truncated")
-    segments, offset = set(), 32
-    for _ in range(count):
-        require(offset + 8 <= 32 + size, "the Mach-O Stage 1's load commands are truncated")
-        command, length = struct.unpack_from("<II", stage1, offset)
-        require(length >= 8 and offset + length <= 32 + size, "the Mach-O Stage 1 has a malformed load command")
-        if command == 0x19 and length >= 24:
-            name = stage1[offset + 8:offset + 24].rstrip(b"\0").decode("ascii", "replace")
-            segments.add(name)
-            # kmutil records __TEXT_BOOT_EXEC's size as kcbz, and iBoot starts SPTM when it
-            # is nonzero (omarchy_macho.layout refuses the same).
-            require(name != "__TEXT_BOOT_EXEC" or length < 56
-                    or struct.unpack_from("<QQQ", stage1, offset + 32)[::2] == (0, 0),
-                    "the Mach-O Stage 1 has __TEXT_BOOT_EXEC, so iBoot would start SPTM")
-        offset += length
-    lacking = [name for name in ("__TEXT", "__TEXT_EXEC", "__PRELINK_INFO", "__LINKEDIT") if name not in segments]
-    require(not lacking, "the Mach-O Stage 1 is not a boot object: it lacks " + ", ".join(lacking)
-            + " (aura's build/aura-boot.macho, not its linker build/aura.macho)")
+    # The engine's own test (omarchy_macho.layout), so an image never carries a Stage 1
+    # the installer refuses: a 64-bit Arm fileset with kmutil's segments, each file-backed
+    # at its virtual offset, no sized __TEXT_BOOT_EXEC, entered inside __TEXT_EXEC. The CPU
+    # subtype is not held: aura's macho_boot_object.py writes CPU_SUBTYPE_ARM64E with the
+    # kernel capability bits (0xC0000002).
+    macho = _engine_macho()
+    try:
+        macho.layout(stage1)
+    except macho.MachOError as error:
+        raise CheckError(f"the Mach-O Stage 1 is not a boot object the engine accepts: {error}"
+                         " (aura's build/aura-boot.macho, not its linker build/aura.macho)") from None
     require(stage1.count(b"AURORA-S1-CFG01\0") == 1, "the Mach-O Stage 1 is missing its configuration block")
     for member in confined:
         size = members[member].file_size
