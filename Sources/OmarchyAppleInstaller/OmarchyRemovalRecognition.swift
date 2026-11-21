@@ -328,8 +328,7 @@
         ?? .missing
       stubHasLibrary = files.stubHasLibrary
       stubBootObject = files.stubBootObject.map(SHA256Digest.init(hashing:))
-      stubHasM1n1 =
-        files.stubBootObject.map { $0.range(of: Data("##m1n1_ver##".utf8)) != nil } ?? false
+      stubHasM1n1 = files.stubBootObject.map(Self.isOmarchyStage1(bootObject:)) ?? false
       stubEFIPartitions = files.stubBootObject.flatMap(Self.efiPartitions(bootObject:))
       // Sorted: the same journals must compare equal however a directory lists them.
       let interrupted = files.interruptedInstalls.sorted {
@@ -441,7 +440,9 @@
       guard stubBootObject != nil else {
         return "its startup container has no m1n1 boot object (Finish Installation.app)"
       }
-      guard stubHasM1n1 else { return "the boot object in its startup container isn’t m1n1" }
+      guard stubHasM1n1 else {
+        return "the boot object in its startup container isn’t m1n1 or aura’s Mach-O boot object"
+      }
       guard let links = stubEFIPartitions, links.count == 1,
         let link = UUID(uuidString: links[0]), link.uuidString == installation.esp.uuid
       else {
@@ -484,6 +485,25 @@
         created.append(entry)
       }
       return created
+    }
+
+    /// Whether a startup container's boot object is one an Omarchy install
+    /// enrolls: m1n1 (its "##m1n1_ver##" marker, every Mac up to M3 and the
+    /// Neo), or, on an execute-window Mac (M4 and later), aura's Mach-O fileset
+    /// boot object (aura build/aura-boot.macho, filled by the engine's
+    /// install_macho_stage1): a 64-bit Arm MH_FILESET carrying aura's
+    /// "##aura_ver##" marker and exactly one valid Aurora Stage 1 config block.
+    /// Which ESP either one names is checked after this, the same for both.
+    static func isOmarchyStage1(bootObject: Data) -> Bool {
+      if bootObject.range(of: Data("##m1n1_ver##".utf8)) != nil { return true }
+      let bytes = [UInt8](bootObject.prefix(16))
+      func word(_ offset: Int) -> UInt32 {
+        (0..<4).reduce(UInt32(0)) { $0 | UInt32(bytes[offset + $1]) << (8 * $1) }
+      }
+      guard bytes.count == 16, word(0) == 0xFEED_FACF, word(4) == 0x0100_000C, word(12) == 12
+      else { return false }
+      return bootObject.range(of: Data("##aura_ver##".utf8)) != nil
+        && auroraStage1Partition(bootObject: bootObject) != nil
     }
 
     /// The EFI partitions a startup container's m1n1 chainloads. Aurora's J700

@@ -38,6 +38,63 @@
         [F.convergedInstall.stub, F.convergedInstall.esp] + F.convergedInstall.linux)
     }
 
+    /// aura's Mach-O fileset boot object (build/aura-boot.macho) as the engine's
+    /// install_macho_stage1 fills it for an execute-window Mac: the Mach-O header,
+    /// aura's version marker and the same config block as the J700 Stage 1.
+    static func auraBootObject(
+      esp: String, filetype: UInt32 = 12, marker: String = "##aura_ver##1.0.0b13-g703a0a92"
+    ) -> Data {
+      func le(_ value: UInt32) -> [UInt8] {
+        (0..<4).map { UInt8(truncatingIfNeeded: value >> (8 * $0)) }
+      }
+      var image = Data(le(0xFEED_FACF) + le(0x0100_000C) + le(0xC000_0002) + le(filetype))
+      image.append(Data(count: 16))
+      image.append(Data(" aura \(marker)\0 ".utf8))
+      let neo = auroraStage1(esp: esp)
+      let start = neo.range(of: Data("AURORA-S1-CFG01\0".utf8))!.lowerBound
+      image.append(neo[start...])
+      return image
+    }
+
+    func testAnExecuteWindowStubBootingAurasMachOBootObjectIsRecognised() throws {
+      // An M4 (J616s) install enrolls aura-boot.macho, not m1n1.
+      let disk = FakeRemovalDisk(F.neoMacos26(), install: F.convergedInstall)
+      disk.files!.stubBootObject = Self.auraBootObject(esp: F.convergedInstall.esp.lowercased())
+      let plan = try OmarchyRemovalPlan(disks: disk)
+      XCTAssertEqual(plan.kind, .installation)
+      XCTAssertEqual(
+        plan.members.map(\.uuid),
+        [F.convergedInstall.stub, F.convergedInstall.esp] + F.convergedInstall.linux)
+    }
+
+    func testAnAuraBootObjectMustNameThisESP() {
+      assertRejectedAuroraStage1(Self.auraBootObject(esp: F.id(77).lowercased()))
+    }
+
+    func testAForeignObjectIsStillRefused() {
+      let esp = F.convergedInstall.esp.lowercased()
+      for (name, object) in [
+        // A Mach-O that is not a fileset, or carries no aura marker.
+        ("a Mach-O executable", Self.auraBootObject(esp: esp, filetype: 2)),
+        (
+          "a fileset without aura's marker",
+          Self.auraBootObject(esp: esp, marker: "##other_ver##1")
+        ),
+        // aura's marker and config block, but not a Mach-O.
+        ("a raw image with aura's marker", Self.auraBootObject(esp: esp).dropFirst(32)),
+      ] {
+        let disk = FakeRemovalDisk(F.neoMacos26(), install: F.convergedInstall)
+        disk.files!.stubBootObject = Data(object)
+        XCTAssertThrowsError(try OmarchyRemovalPlan(disks: disk), name) { error in
+          XCTAssertTrue(
+            (error as? RemovalFailure)?.message.contains(
+              "the boot object in its startup container isn’t m1n1 or aura’s Mach-O boot object"
+            ) ?? false,
+            "\(name): \(error)")
+        }
+      }
+    }
+
     func testAnAuroraStage1MustNameThisESP() {
       assertRejectedAuroraStage1(Self.auroraStage1(esp: F.id(77).lowercased()))
     }
@@ -475,7 +532,7 @@
           { $0.stubBootObject = nil }
         ),
         (
-          "the boot object in its startup container isn’t m1n1",
+          "the boot object in its startup container isn’t m1n1 or aura’s Mach-O boot object",
           {
             $0.stubBootObject = Data(
               "kernel STACKBOT chosen.asahi,efi-system-partition=\(esp)\n\0".utf8)
