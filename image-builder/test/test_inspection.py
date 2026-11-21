@@ -20,7 +20,7 @@ inspection = fixtures.load("inspection", "builder/inspection.py")
 inspection.OWNER_UID = os.geteuid()
 CHECKS = ("candidate-versions", "runtime-sources", "boot-loader", "minimum-versions", "refused-packages", "apple-packages", "installed-boot-payloads",
           "candidate-files", "package-mtrees",
-          "m1n1-stage2", "ctxr-uboot", "aurora-device-trees", "limine-uki", "embedded-initramfs", "boot-splash", "boot-maintenance",
+          "m1n1-stage2", "ctxr-uboot", "aurora-device-trees", "limine-uki", "embedded-initramfs", "display-gate-modules", "boot-splash", "boot-maintenance",
           "image-target", "first-boot", "snapshots", "pacman-config", "installed-system", "speaker-routing", "factory")
 # Fixture roots live on whatever filesystem the tests run on: these paths stand in for btrfs subvolumes.
 SUBVOLUMES: set[Path] = set()
@@ -134,6 +134,32 @@ class InspectionTest(unittest.TestCase):
         summary.write_text(__import__("json").dumps(value))
         with self.assertRaisesRegex(inspection.InspectionError, "retired hardware profile"):
             inspection.Candidates(imported)
+
+    def uki_with_initramfs_modules(self, *modules):
+        """The image's UKI with an initramfs carrying MODULES as packaged .ko files."""
+        uki = self.root / "boot/efi/EFI/Linux/omarchy_linux-aurora.efi"
+        sections = dict(inspection.limine.pe_sections(uki))
+        extra = fixtures.initramfs({f"usr/lib/modules/{fixtures.RELEASE}/kernel/drivers/{m}.ko": b"ko" for m in modules})
+        sections[".initrd"] = sections[".initrd"] + extra
+        uki.write_bytes(fixtures.pe_image(sections))
+
+    def test_a_kernel_without_display_gate_modules_needs_none(self):
+        self.assertIn("ships none", inspection.check_display_gate_modules(self.root, inspection.Candidates(self.candidates)))
+
+    def test_the_display_gate_modules_a_kernel_ships_must_be_in_the_initramfs(self):
+        # out6: the J616s DP PHY was on the root only, so the first boot's display gate gave up.
+        shipped = [f"usr/lib/modules/{fixtures.RELEASE}/kernel/drivers/phy/apple/{m}.ko.zst"
+                   for m in ("phy-apple-t6040-usb2", "mux-apple-display-crossbar", "atc_t6050_dp", "phy-apple-atc")]
+        candidates = inspection.Candidates(self.candidates)
+        listing = candidates.listing(inspection.KERNEL)
+        candidates._listings[inspection.KERNEL] = listing + shipped
+        with self.assertRaisesRegex(inspection.InspectionError, "lacks the display gate's .*phy-apple-t6040-usb2"):
+            inspection.check_display_gate_modules(self.root, candidates)
+        self.uki_with_initramfs_modules("mux-apple-display-crossbar", "atc-t6050-dp", "phy-apple-atc")
+        with self.assertRaisesRegex(inspection.InspectionError, r"lacks the display gate's phy-apple-t6040-usb2 \("):
+            inspection.check_display_gate_modules(self.root, candidates)
+        self.uki_with_initramfs_modules("phy_apple_t6040_usb2")
+        self.assertIn("phy-apple-t6040-usb2", inspection.check_display_gate_modules(self.root, candidates))
 
     def test_an_image_without_the_confined_stage2_needs_no_ctxr_uboot(self):
         report = self.inspect()

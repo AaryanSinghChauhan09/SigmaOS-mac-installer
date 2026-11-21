@@ -500,6 +500,35 @@ def check_limine(root: Path, candidates: Candidates, report: dict) -> str:
     return f"Limine at BOOTAA64.EFI boots omarchy_{KERNEL}.efi ({release}) with the set's kernel"
 
 
+# The modules the kernel's display gate waits for before the root is up
+# (omarchy-mac-boot 92-omarchy-mac-display-gate.conf). An image's initramfs is
+# built away from the Mac, so autodetect cannot pick them: without the M4 PHY a
+# J616s's first boot gave up on the gate and its external DCPs failed with -110.
+DISPLAY_GATE_MODULES = ("phy-apple-t6040-usb2", "mux-apple-display-crossbar", "atc-t6050-dp", "phy-apple-atc")
+MODULE_SUFFIX = re.compile(r"\.ko(\.(zst|xz|gz))?$")
+
+
+def module_names(paths) -> set[str]:
+    """Module names (dashes for underscores) of the .ko files among PATHS."""
+    return {MODULE_SUFFIX.sub("", PurePosixPath(p).name).replace("_", "-")
+            for p in paths if MODULE_SUFFIX.search(PurePosixPath(p).name)}
+
+
+def check_display_gate_modules(root: Path, candidates: Candidates) -> str:
+    """Every display gate module the set's kernel ships as a module is in the UKI's initramfs."""
+    shipped = module_names(candidates.listing(KERNEL)) & set(DISPLAY_GATE_MODULES)
+    if not shipped:
+        return "the kernel ships none of the display gate's modules"
+    sections = limine.pe_sections(root / f"boot/efi/EFI/Linux/omarchy_{KERNEL}.efi")
+    names = []
+    for chunk in limine.initramfs_archives(sections.get(".initrd") or b""):
+        names += [limine.unescape(n) for n in limine._bsdtar(chunk, "-t").decode(errors="replace").splitlines()]
+    missing = sorted(shipped - module_names(names))
+    require(not missing, "the UKI's initramfs lacks the display gate's " + ", ".join(missing)
+            + " (omarchy-mac-boot 92-omarchy-mac-display-gate.conf)")
+    return "the UKI's initramfs carries " + ", ".join(sorted(shipped))
+
+
 def check_embedded_initramfs(root: Path, report: dict) -> str:
     sections = limine.pe_sections(root / f"boot/efi/EFI/Linux/omarchy_{KERNEL}.efi")
     count = limine.validate_initramfs(sections.get(".initrd") or b"")
@@ -867,6 +896,7 @@ def inspect(root: Path, candidates_dir: Path, channel: str, factory: Path | None
         ("aurora-device-trees", lambda: check_supported_models(root, candidates, report, policy, channel)),
         ("limine-uki", lambda: check_limine(root, candidates, report)),
         ("embedded-initramfs", lambda: check_embedded_initramfs(root, report)),
+        ("display-gate-modules", lambda: check_display_gate_modules(root, candidates)),
         ("boot-splash", lambda: check_boot_splash(root, report)),
         ("boot-maintenance", lambda: check_maintenance(root)),
         ("image-target", lambda: check_image_target(root, candidates, profile, report)),
