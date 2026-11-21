@@ -515,8 +515,17 @@ def module_names(paths) -> set[str]:
             for p in paths if MODULE_SUFFIX.search(PurePosixPath(p).name)}
 
 
+DISPLAY_GATE_DROPIN = "etc/mkinitcpio.conf.d/92-omarchy-mac-display-gate.conf"
+
+
 def check_display_gate_modules(root: Path, candidates: Candidates) -> str:
-    """Every display gate module the set's kernel ships as a module is in the UKI's initramfs."""
+    """With omarchy-mac-boot's display gate drop-in installed, every display gate
+    module the set's kernel ships as a module is in the UKI's initramfs. An image
+    without the drop-in (omarchy-mac-boot before omacom/omarchy-mac-pkgs#174) has
+    no display gate to hold, and no lane's omarchy-mac-boot carries it yet."""
+    dropin = root / DISPLAY_GATE_DROPIN
+    if not dropin.exists() and not dropin.is_symlink():
+        return "no display gate drop-in: the image's omarchy-mac-boot predates the display gate"
     shipped = module_names(candidates.listing(KERNEL)) & set(DISPLAY_GATE_MODULES)
     if not shipped:
         return "the kernel ships none of the display gate's modules"

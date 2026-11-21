@@ -143,11 +143,25 @@ class InspectionTest(unittest.TestCase):
         sections[".initrd"] = sections[".initrd"] + extra
         uki.write_bytes(fixtures.pe_image(sections))
 
+    def display_gate_dropin(self):
+        dropin = self.root / inspection.DISPLAY_GATE_DROPIN
+        dropin.parent.mkdir(parents=True, exist_ok=True)
+        dropin.write_text("MODULES+=(phy-apple-t6040-usb2 mux-apple-display-crossbar atc-t6050-dp phy-apple-atc phy-apple-dptx)\n")
+
+    def test_an_image_without_the_display_gate_dropin_holds_no_modules(self):
+        # Today's lanes: the kernel ships some gate modules, but omarchy-mac-boot has no drop-in yet.
+        candidates = inspection.Candidates(self.candidates)
+        candidates._listings[inspection.KERNEL] = candidates.listing(inspection.KERNEL) + [
+            f"usr/lib/modules/{fixtures.RELEASE}/kernel/drivers/phy/apple/phy-apple-dptx.ko.zst"]
+        self.assertIn("no display gate drop-in", inspection.check_display_gate_modules(self.root, candidates))
+
     def test_a_kernel_without_display_gate_modules_needs_none(self):
+        self.display_gate_dropin()
         self.assertIn("ships none", inspection.check_display_gate_modules(self.root, inspection.Candidates(self.candidates)))
 
     def test_the_display_gate_modules_a_kernel_ships_must_be_in_the_initramfs(self):
         # out6: the J616s DP PHY was on the root only, so the first boot's display gate gave up.
+        self.display_gate_dropin()
         shipped = [f"usr/lib/modules/{fixtures.RELEASE}/kernel/drivers/phy/apple/{m}.ko.zst"
                    for m in ("phy-apple-t6040-usb2", "mux-apple-display-crossbar", "atc_t6050_dp", "phy-apple-atc",
                              "phy-apple-dptx")]
