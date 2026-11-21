@@ -728,6 +728,13 @@ def stub_installer(sysinfo, dutil, osinfo):
         return result
 
     def _collect_firmware(pkg):
+        try:
+            return _collect_firmware_once(pkg)
+        except BaseException:
+            _detach_recovery_ramdisk()
+            raise
+
+    def _collect_firmware_once(pkg):
         image = os.path.join(
             installer.osi.recovery,
             installer.osi.vgid,
@@ -758,6 +765,24 @@ def stub_installer(sysinfo, dutil, osinfo):
 
     installer.install_files = install_files_with_decrypted_images_and_omarchys_step2
     return installer
+
+
+def _detach_recovery_ramdisk(mountpoint="recovery"):
+    """Detach the ramdisk stub's collect_firmware attached at its relative
+    "recovery" mountpoint, which it detaches only when the collection
+    succeeds. A ramdisk left attached makes the next attach of the same image
+    fail. Only this run's own mountpoint, in the engine's working directory, is
+    touched, and a detach that fails never hides the collection's error."""
+    path = os.path.abspath(mountpoint)
+    if not os.path.ismount(path):
+        return
+    for command in (["hdiutil", "detach", "-quiet", path], ["hdiutil", "detach", "-quiet", "-force", path]):
+        try:
+            if subprocess.run(command, check=False).returncode == 0:
+                return
+        except OSError:
+            return
+    logging.warning(f"could not detach the recovery ramdisk at {path}")
 
 
 def _validate_neo_firmware_package(pkg):

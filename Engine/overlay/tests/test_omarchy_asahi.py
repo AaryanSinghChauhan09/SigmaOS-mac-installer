@@ -1859,6 +1859,8 @@ class EncryptedRecoveryFirmwareTests(unittest.TestCase):
             def collect_firmware(self, pkg):
                 fake_stub.subprocess.run(["hdiutil", "attach", "-quiet", "-readonly",
                                           "-mountpoint", "recovery", str(test.image)], check=True)
+                if getattr(test, "failing", False):
+                    raise OSError(1, "Operation not permitted")
                 fake_stub.subprocess.run(["tar", "czf", "all_firmware.tar.gz"], check=True)
                 fake_stub.subprocess.run(["hdiutil", "detach", "-quiet", "recovery"])
                 return pkg
@@ -1897,6 +1899,28 @@ class EncryptedRecoveryFirmwareTests(unittest.TestCase):
         ])
         # The stub's own image is untouched; install_files replaces it.
         self.assertEqual(self.image.read_bytes()[:4], b"AEA1")
+
+    def test_a_failed_collection_detaches_the_recovery_ramdisk(self):
+        # Run 1 on a J616s left its ramdisk attached, so run 2's attach failed.
+        self.failing = True
+        installer = self.make(b"koly" + b"\0" * 60)
+        mountpoint = os.path.abspath("recovery")
+        detaches = []
+        with patch("omarchy_asahi.os.path.ismount", lambda path: path == mountpoint), \
+                patch("omarchy_asahi.subprocess.run",
+                      lambda command, **kwargs: detaches.append(command) or subprocess.CompletedProcess(command, 0)):
+            with self.assertRaisesRegex(OSError, "Operation not permitted"):
+                self.collect(installer)
+        self.assertEqual(detaches, [["hdiutil", "detach", "-quiet", mountpoint]])
+
+    def test_a_successful_collection_leaves_detaching_to_the_stub(self):
+        installer = self.make(b"koly" + b"\0" * 60)
+        detaches = []
+        with patch("omarchy_asahi.os.path.ismount", lambda path: True), \
+                patch("omarchy_asahi.subprocess.run",
+                      lambda command, **kwargs: detaches.append(command) or subprocess.CompletedProcess(command, 0)):
+            self.assertEqual(self.collect(installer), "pkg")
+        self.assertEqual(detaches, [])
 
     def test_an_image_that_will_not_decrypt_is_refused(self):
         self.decrypt = FakeDecrypt({})

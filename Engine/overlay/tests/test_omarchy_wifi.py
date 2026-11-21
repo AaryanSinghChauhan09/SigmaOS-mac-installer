@@ -397,6 +397,44 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(self.after, ["-C", str(self.work / "recovery/usr/share")])
         self.assertEqual(self.commands[-1][-3:], ["-C", "../../usr/sbin", "appleh13camerad"])
 
+    def test_the_staged_archive_takes_contents_even_where_flags_cannot_be_set(self):
+        # A J616s on macOS 26.6.2: setting the ramdisk's flags on the staged copies is refused.
+        def refused(*args, **kwargs):
+            raise PermissionError(1, "Operation not permitted")
+
+        with mock.patch("shutil.copystat", refused), mock.patch.object(os, "chflags", refused, create=True), \
+                mock.patch.object(os, "utime", refused), self.collecting("j614s") as radios:
+            files = self.stub_collects()
+            radios.require()
+        self.assertEqual(files["brcm/brcmfmac4388c2-pcie.apple,mriya.bin"].data, FIRMWARE)
+        self.assertIn("bluetooth/recovery-bt.bin", self.staged)
+        self.assertIn("wifi/C-4388__s-C2/guam.trx", self.staged)
+        self.assertTrue(self.staged["wifi/C-4388__s-C2/mriya.trx"], "links stay links")
+
+    def test_the_staged_tree_is_a_byte_identical_copy(self):
+        snapshot = {}
+
+        def run(command, *args, **kwargs):
+            if command[:3] == ["tar", "czf", "all_firmware.tar.gz"]:
+                staged = Path(command[command.index("firmware") - 1]) / "firmware"
+                snapshot.update({str(p.relative_to(staged)): (os.readlink(p) if p.is_symlink() else p.read_bytes())
+                                 for p in staged.rglob("*") if p.is_file() or p.is_symlink()})
+            return SimpleNamespace(returncode=0)
+
+        self.stub.subprocess = SimpleNamespace(run=run, CompletedProcess=object)
+        with self.collecting("j614s") as radios:
+            self.stub_collects()
+            radios.require()
+        share = self.work / "recovery/usr/share/firmware"
+        expected = {"bluetooth/recovery-bt.bin": b"bt"}
+        for path in self.system.rglob("*"):
+            if path.is_file() or path.is_symlink():
+                expected["wifi/" + str(path.relative_to(self.system))] = (
+                    os.readlink(path) if path.is_symlink() else path.read_bytes())
+        self.assertEqual(snapshot, expected)
+        self.assertFalse(any(name.startswith("wifi/") and (share / name).exists() and name not in expected
+                             for name in snapshot), "Recovery's own wifi tree is left out")
+
     def test_names_are_restored_after_collection(self):
         before = (self.stub.WiFiFWCollection, self.stub.BluetoothFWCollection, self.stub.subprocess)
         with self.collecting("j614s"):

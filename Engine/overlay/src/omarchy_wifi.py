@@ -257,6 +257,29 @@ def missing_bluetooth(outputs, chip, board):
     return [stem + "-u.bin", stem + "-u.ptb"]
 
 
+def copy_contents(source, destination, skip=()):
+    """shutil.copytree(source, destination, symlinks=True), with SKIP's names left
+    out of SOURCE's top level, copying contents and permission bits only.
+
+    copytree's copy2 and copystat also set each file's and directory's flags,
+    times and extended attributes. On a J616s on macOS 26.6.2, setting the
+    recovery ramdisk's flags on the staged copies fails with EPERM on every
+    file under usr/share/firmware/bluetooth and on the directories, which
+    stopped the whole collection. The archive needs only the bytes."""
+    os.makedirs(destination)
+    for name in sorted(os.listdir(source)):
+        if name in skip:
+            continue
+        path, target = os.path.join(source, name), os.path.join(destination, name)
+        if os.path.islink(path):
+            os.symlink(os.readlink(path), target)
+        elif os.path.isdir(path):
+            copy_contents(path, target)
+        else:
+            shutil.copyfile(path, target)
+            shutil.copymode(path, target)
+
+
 class _SystemWiFiArchive:
     """subprocess for stub: when Wi-Fi came from the installed system, the
     fallback archive carries that tree as firmware/wifi."""
@@ -278,13 +301,8 @@ class _SystemWiFiArchive:
         recovery = os.path.join(*RECOVERY_FIRMWARE[1:])
         with tempfile.TemporaryDirectory(prefix="omarchy-wifi-") as staging:
             firmware = os.path.join(staging, "firmware")
-            shutil.copytree(
-                recovery,
-                firmware,
-                symlinks=True,
-                ignore=lambda directory, names: ["wifi"] if os.path.samefile(directory, recovery) else [],
-            )
-            shutil.copytree(tree, os.path.join(firmware, "wifi"), symlinks=True)
+            copy_contents(recovery, firmware, skip=("wifi",))
+            copy_contents(tree, os.path.join(firmware, "wifi"))
             # Later -C arguments are relative to Recovery's directory: return
             # there after the staged tree.
             command[at:at + 3] = ["-C", staging, "firmware", "-C", os.path.abspath(RECOVERY_FIRMWARE[1])]
