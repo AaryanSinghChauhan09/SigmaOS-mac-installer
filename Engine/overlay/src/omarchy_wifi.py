@@ -144,7 +144,8 @@ def board(run=subprocess.run):
     """This Mac's Broadcom Wi-Fi board: the ADT wlan node's module-instance
     (the name Linux gets as brcm,board-type) when the ADT also has a Broadcom
     wlan function. None when the ADT has no Broadcom wlan board, as on the
-    MacBook Neo, or its name is unusable."""
+    MacBook Neo, or its name is unusable. WiFiError when the device tree
+    cannot be read: that is not a Mac without a Broadcom board."""
     try:
         output = run(
             ["/usr/sbin/ioreg", "-a", "-r", "-p", "IODeviceTree", "-n", "wlan", "-d", "1"],
@@ -152,8 +153,8 @@ def board(run=subprocess.run):
             capture_output=True,
         ).stdout
         found = plistlib.loads(output) if output.strip() else []
-    except (OSError, subprocess.CalledProcessError, plistlib.InvalidFileException, ValueError):
-        return None
+    except (OSError, subprocess.CalledProcessError, plistlib.InvalidFileException, ValueError) as error:
+        raise WiFiError(f"cannot read the device tree's wlan node: {error}") from error
     nodes = [node for node in (found if isinstance(found, list) else [found]) if isinstance(node, dict)]
     if not any(broadcom(node.get("compatible")) for node in nodes):
         return None
@@ -321,11 +322,16 @@ class Radios:
         # Every converted Wi-Fi set read: Recovery's, and the installed
         # system's when it was readable.
         self.sources = []
+        # A failed board lookup, refused once the collection is done.
+        self.error = None
 
     def require(self):
         """A Mac whose ADT names a Broadcom Wi-Fi board must get firmware for
         it from some source, and when that board's files sit in the directory
-        upstream skips, the package must bring up its radios."""
+        upstream skips, the package must bring up its radios. A board that
+        could not be looked up is refused, never taken as no Broadcom board."""
+        if self.error is not None:
+            raise self.error
         if self.board is None:
             return
         chips = set()
@@ -356,7 +362,11 @@ def collectors(stub, upstream, machine, read_board=board, system_path=SYSTEM_WIF
         recovery = collection(source_path)
         radios.wifi = converted(recovery)
         radios.sources = [radios.wifi]
-        radios.board = read_board()
+        try:
+            radios.board = read_board()
+        except WiFiError as error:
+            radios.error = WiFiError(f"{machine}: {error}")
+            return recovery
         if radios.board is None:
             # No Broadcom wlan board in the ADT: Recovery's set, as upstream
             # collects it. The MacBook Neo's MT7932 radios are collected on

@@ -222,10 +222,21 @@ class BoardTests(unittest.TestCase):
         for value in (b"Guam", b"../guam", b"", b"a" * 33, b"guam x"):
             self.assertIsNone(wifi.board(self.ioreg([{"module-instance": value}, self.M4_FUNCTION])), value)
 
+    def test_a_failed_lookup_is_not_a_missing_board(self):
+        # ioreg failing or answering garbage says nothing about the radio.
         def fails(command, **kwargs):
             raise subprocess.CalledProcessError(1, command)
 
-        self.assertIsNone(wifi.board(fails))
+        def missing(command, **kwargs):
+            raise FileNotFoundError(command[0])
+
+        def garbage(command, **kwargs):
+            return SimpleNamespace(stdout=b"not a property list")
+
+        for run in (fails, missing, garbage):
+            with self.subTest(run=run.__name__), \
+                    self.assertRaisesRegex(wifi.WiFiError, "cannot read the device tree's wlan node"):
+                wifi.board(run)
 
     def test_asks_the_device_tree_for_the_wlan_node(self):
         seen = []
@@ -508,6 +519,23 @@ class CollectorTests(unittest.TestCase):
         self.assertIsNone(radios.system)
         self.assertIsNone(radios.board)
         self.assertEqual(radios.sources, [radios.wifi])
+
+    def test_a_failed_board_lookup_is_refused(self):
+        # A lookup failure must not pass for a Mac without a Broadcom board:
+        # Recovery's set is collected, then the package is refused.
+        def lookup_fails():
+            raise wifi.WiFiError("cannot read the device tree's wlan node: ioreg failed")
+
+        def no_system(path):
+            raise AssertionError("no board, no system tree")
+
+        with mock.patch.object(wifi, "system_tree", no_system):
+            with wifi.collectors(self.stub, UPSTREAM, "j604", read_board=lookup_fails) as radios:
+                self.stub_collects()
+                with self.assertRaisesRegex(wifi.WiFiError, "j604: cannot read the device tree's wlan node"):
+                    radios.require()
+        self.assertIsNone(radios.board)
+        self.assertIsNone(radios.system)
 
     def test_archive_without_recoverys_tree_is_refused(self):
         with self.collecting("j614s"):
