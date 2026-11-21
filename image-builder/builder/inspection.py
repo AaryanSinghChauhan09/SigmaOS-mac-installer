@@ -350,6 +350,17 @@ def check_ctxr_uboot(root: Path, candidates: Candidates) -> str:
     confined = root / "boot/efi/m1n1/boot-ctxr.bin"
     if not confined.exists() and not confined.is_symlink():
         return "no confined Stage 2: no execute-window Mac boots this image"
+    # The staged copies are what an execute-window Mac loads: the confined Stage 2 is the
+    # inspected common bundle, and the Mach-O Stage 1 is the authenticated aura's.
+    require(confined.is_file() and not confined.is_symlink()
+            and confined.read_bytes() == (root / "boot/efi/m1n1/boot.bin").read_bytes(),
+            "the confined Stage 2 does not match the inspected common bundle")
+    require(candidates.loader["stage2"] == "aura",
+            f"the image carries the confined Stage 2, but its Stage 2 comes from {candidates.loader['stage2']}, not aura")
+    macho, path = root / "boot/efi/aurora/stage1.macho", "usr/share/aura/stage1/aura-boot.macho"
+    require(macho.is_file() and not macho.is_symlink()
+            and macho.read_bytes() == candidates.member(candidates.loader["stage2"], path),
+            f"the Mach-O Stage 1 does not match the authenticated {candidates.loader['stage2']} package")
     path = "usr/lib/asahi-boot/u-boot-nodtb.bin"
     uboot = candidates.member(candidates.boot_owners[path], path)
     require(CTXR_WINDOW_PROPERTY in uboot,

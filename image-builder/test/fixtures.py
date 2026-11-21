@@ -92,7 +92,8 @@ AURA_PROVIDES = ("m1n1=1.6.1.aurora23", "m1n1-aurora=1.6.1.aurora23", "m1n1-neo=
 def aura_contents() -> dict[str, bytes]:
     return {"usr/lib/asahi-boot/m1n1.bin": b"aura stage 2 payload",
             "usr/share/aura/stage1/aura-raw.bin": raw_stage1(b"aura-stage1"),
-            "usr/share/aura/stage1/aura.macho": b"aura macho"}
+            "usr/share/aura/stage1/aura.macho": b"aura macho",
+            "usr/share/aura/stage1/aura-boot.macho": b"aura boot object"}
 
 
 SPEAKERGUARDD_RULES = (

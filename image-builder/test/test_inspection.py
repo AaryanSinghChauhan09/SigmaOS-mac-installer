@@ -10,7 +10,6 @@ import shutil
 import sys
 import tempfile
 import unittest
-from unittest import mock
 import zlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -181,17 +180,44 @@ class InspectionTest(unittest.TestCase):
         self.assertEqual(report["checks"]["ctxr-uboot"]["result"], "passed")
         self.assertIn("no confined Stage 2", report["checks"]["ctxr-uboot"]["detail"])
 
+    def confined_candidates(self, uboot=b"u-boot"):
+        """The fixture set as an aura set: aura's boot object and the given U-Boot."""
+        candidates = inspection.Candidates(self.candidates)
+        candidates.loader = {"stage2": "aura", "stage1": "m1n1-aurora"}
+        member = candidates.member
+        staged = {"usr/share/aura/stage1/aura-boot.macho": b"aura boot object",
+                  "usr/lib/asahi-boot/u-boot-nodtb.bin": uboot}
+        candidates.member = lambda name, path: staged[path] if path in staged else member(name, path)
+        return candidates
+
+    def stage_confined(self, confined=None, macho=b"aura boot object"):
+        stage2 = (self.root / "boot/efi/m1n1/boot.bin").read_bytes()
+        (self.root / "boot/efi/m1n1/boot-ctxr.bin").write_bytes(stage2 if confined is None else confined)
+        path = self.root / "boot/efi/aurora/stage1.macho"
+        path.unlink(missing_ok=True)
+        if macho is not None:
+            path.write_bytes(macho)
+
     def test_the_confined_stage2_needs_a_uboot_that_reads_the_ctxr_window(self):
         # A J616s booted on one CPU with uboot-aurora d30213e, which predates u-boot#32.
+        self.stage_confined()
+        self.assertFails("ctxr-uboot", "not aura")
+        with self.assertRaisesRegex(inspection.InspectionError, "aurora-silicon/u-boot#32"):
+            inspection.check_ctxr_uboot(self.root, self.confined_candidates())
+        candidates = self.confined_candidates(b"u-boot " + inspection.CTXR_WINDOW_PROPERTY)
+        self.assertIn("u-boot#32", inspection.check_ctxr_uboot(self.root, candidates))
+
+    def test_the_staged_m4_boot_payloads_must_be_the_sets(self):
+        # What an execute-window Mac loads is the staged copies, so a stale one is caught.
         stage2 = (self.root / "boot/efi/m1n1/boot.bin").read_bytes()
-        (self.root / "boot/efi/m1n1/boot-ctxr.bin").write_bytes(stage2)
-        self.assertFails("ctxr-uboot", "aurora-silicon/u-boot#32")
-        candidates = inspection.Candidates(self.candidates)
-        path = "usr/lib/asahi-boot/u-boot-nodtb.bin"
-        with mock.patch.object(inspection.Candidates, "member",
-                               lambda self, name, member: b"u-boot " + inspection.CTXR_WINDOW_PROPERTY
-                               if member == path else candidates.member(name, member)):
-            self.assertIn("u-boot#32", inspection.check_ctxr_uboot(self.root, inspection.Candidates(self.candidates)))
+        candidates = self.confined_candidates(b"u-boot " + inspection.CTXR_WINDOW_PROPERTY)
+        for confined, macho, message in ((stage2 + b"stale", b"aura boot object", "the inspected common bundle"),
+                                         (None, b"another boot object", "the authenticated aura package"),
+                                         (None, None, "the authenticated aura package")):
+            with self.subTest(message=message, macho=macho):
+                self.stage_confined(confined, macho)
+                with self.assertRaisesRegex(inspection.InspectionError, message):
+                    inspection.check_ctxr_uboot(self.root, candidates)
 
     def test_the_j700_boot_payloads_must_be_the_sets(self):
         for rel, data in (("boot/efi/aurora/stage1-j700.bin", b"another stage 1"),
