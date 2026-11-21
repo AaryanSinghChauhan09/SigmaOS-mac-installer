@@ -195,15 +195,32 @@ class BoardTests(unittest.TestCase):
         output = plistlib.dumps(nodes, fmt=plistlib.FMT_XML)
         return lambda command, **kwargs: SimpleNamespace(stdout=output)
 
+    # The ADT's wlan PCIe function as an M4 presents it (bcm4387 for its
+    # BCM4388) and as an M1 does.
+    M4_FUNCTION = {"name": b"wlan\0", "compatible": b"wlan-pcie,bcm4387\0wlan-pcie,bcm\0"}
+    M1_FUNCTION = {"name": b"wlan\0", "compatible": b"wlan-pcie,bcm4378\0wlan-pcie,bcm\0"}
+
     def test_reads_the_wlan_module_instance(self):
-        self.assertEqual(wifi.board(self.ioreg([{"name": b"wlan\0", "module-instance": b"guam\0"}])), "guam")
-        self.assertEqual(wifi.board(self.ioreg([{"name": b"wlan\0"}, {"module-instance": b"mriya\0"}])), "mriya")
+        nodes = [{"name": b"wlan\0", "module-instance": b"guam\0"}, self.M4_FUNCTION, self.M4_FUNCTION]
+        self.assertEqual(wifi.board(self.ioreg(nodes)), "guam")
+        nodes = [self.M1_FUNCTION, {"name": b"wlan\0"}, {"module-instance": b"shikoku\0"}]
+        self.assertEqual(wifi.board(self.ioreg(nodes)), "shikoku")
+
+    def test_no_board_without_a_broadcom_wlan_function(self):
+        # A wlan node with a board name but no Broadcom function is not a
+        # Broadcom board (the MacBook Neo's radios are MediaTek).
+        self.assertIsNone(wifi.board(self.ioreg([{"name": b"wlan\0", "module-instance": b"guam\0"}])))
+        other = {"name": b"wlan\0", "compatible": b"wlan-pcie,mt7932\0"}
+        self.assertIsNone(wifi.board(self.ioreg([{"module-instance": b"guam\0"}, other])))
+        self.assertFalse(wifi.broadcom(b"wlan-pcie,bc\0"))
+        self.assertTrue(wifi.broadcom("wlan-pcie,bcm4388"))
 
     def test_no_board_without_a_usable_name(self):
         self.assertIsNone(wifi.board(self.ioreg([])))
         self.assertIsNone(wifi.board(lambda command, **kwargs: SimpleNamespace(stdout=b"")))
+        self.assertIsNone(wifi.board(self.ioreg([self.M4_FUNCTION])))
         for value in (b"Guam", b"../guam", b"", b"a" * 33, b"guam x"):
-            self.assertIsNone(wifi.board(self.ioreg([{"module-instance": value}])), value)
+            self.assertIsNone(wifi.board(self.ioreg([{"module-instance": value}, self.M4_FUNCTION])), value)
 
         def fails(command, **kwargs):
             raise subprocess.CalledProcessError(1, command)
@@ -244,11 +261,31 @@ class ConformanceTests(unittest.TestCase):
             maker(Path(tmp))
             return wifi.converted(wifi.collection_class(UPSTREAM)(tmp))
 
-    def test_system_package_is_complete_for_m4_pro_and_max(self):
+    def test_system_package_is_complete_for_its_c2_boards(self):
         files = self.converted(installed_system)
-        for machine, (chip, board) in wifi.M4_PRO_MAX_WIFI.items():
-            with self.subTest(machine=machine):
-                self.assertEqual(wifi.missing_wifi(files, chip, board), [])
+        for board in ("hostomel", "mriya"):
+            with self.subTest(board=board):
+                self.assertEqual(wifi.board_chips(files, board), {wifi.SKIPPED_CHIP})
+                self.assertEqual(wifi.missing_wifi(files, wifi.SKIPPED_CHIP, board), [])
+
+    def test_the_chip_comes_from_the_directories_holding_the_boards_files(self):
+        def two_revisions(root):
+            installed_system(root)
+            c0 = root / "C-4388__s-C0"
+            c0.mkdir()
+            (c0 / "mriya.trx").write_bytes(b"c0 firmware")
+            m1 = root / "C-4378__s-B1"
+            m1.mkdir()
+            (m1 / "P-shikoku_M-RASP_V-m__m-7.9.txt").write_bytes(b"x=1\n")
+
+        self.assertEqual(wifi.SKIPPED_CHIP, "4388c2")
+        self.assertEqual(wifi.UPSTREAM_SKIPPED, "C-4388__s-C2")
+        files = self.converted(two_revisions)
+        self.assertEqual(wifi.board_chips(files, "mriya"), {"4388c0", "4388c2"})
+        self.assertEqual(wifi.board_chips(files, "hostomel"), {"4388c2"})
+        self.assertEqual(wifi.board_chips(files, "shikoku"), {"4378b1"})
+        self.assertEqual(wifi.board_chips(files, "mriy"), set())
+        self.assertEqual(wifi.board_chips(self.converted(recovery_25g83), "mriya"), set())
 
     def test_recovery_package_lacks_every_board_file(self):
         files = self.converted(recovery_25g83)
@@ -289,6 +326,12 @@ class CollectorTests(unittest.TestCase):
         self.work = Path(self.tmp.name)
         share = self.work / "recovery/usr/share/firmware"
         recovery_25g83(share / "wifi")
+        # An M1-to-M3 board, which Recovery carries outside the C2 directory.
+        c3 = share / "wifi/C-4387__s-C3"
+        c3.mkdir()
+        (c3 / "kanaha.trx").write_bytes(b"c3 firmware")
+        (c3 / "kanaha.clmb").write_bytes(b"c3 clm")
+        (c3 / "P-kanaha_M-RASP_V-m__m-7.9.txt").write_bytes(b"x=1\n")
         (share / "bluetooth").mkdir(parents=True)
         (share / "bluetooth/recovery-bt.bin").write_bytes(b"bt")
         (self.work / "recovery/usr/sbin").mkdir(parents=True)
@@ -360,14 +403,32 @@ class CollectorTests(unittest.TestCase):
             pass
         self.assertEqual((self.stub.WiFiFWCollection, self.stub.BluetoothFWCollection, self.stub.subprocess), before)
 
-    def test_recovery_only_m4_pro_package_is_refused(self):
-        for options in ({"read_only": False}, {"board": None}, {"board": "kanaha"}):
-            with self.subTest(options=options), self.collecting("j614s", **options) as radios:
+    def test_a_board_no_source_carries_is_refused(self):
+        # The installed system unreadable, or a board neither tree has: no
+        # Wi-Fi firmware for this Mac anywhere. The machine id plays no part.
+        for machine in ("j614s", "j604", "j999"):
+            for options in ({"read_only": False}, {"board": "tasmania"}):
+                with self.subTest(machine=machine, options=options), self.collecting(machine, **options) as radios:
+                    self.stub_collects()
+                    with self.assertRaisesRegex(wifi.WiFiError, "neither Recovery nor the installed macOS"):
+                        radios.require()
+                    self.assertIsNone(radios.system)
+                    self.assertNotIn("wifi/C-4388__s-C2/guam.trx", self.staged)
+
+    def test_a_c2_board_the_package_lacks_is_refused(self):
+        # The installed system has the board's files in the C2 directory but
+        # no firmware for it, so Recovery's set is taken: the chip comes from
+        # the system's files, and Recovery's set lacks the board.
+        partial = self.work / "partial-system/C-4388__s-C2"
+        partial.mkdir(parents=True)
+        (partial / "P-mriya_M-WLMT_V-u__m-4.9.txt").write_bytes(b"vendor=u\n")
+        self.system = partial.parent
+        for machine in ("j614s", "j999"):
+            with self.subTest(machine=machine), self.collecting(machine) as radios:
                 self.stub_collects()
-                with self.assertRaises(wifi.WiFiError):
+                with self.assertRaisesRegex(wifi.WiFiError, "brcmfmac4388c2-pcie.apple,mriya.bin"):
                     radios.require()
                 self.assertIsNone(radios.system)
-                self.assertNotIn("wifi/C-4388__s-C2/guam.trx", self.staged)
 
     def test_missing_bluetooth_is_refused(self):
         self.bt_board = "hostomel"
@@ -376,25 +437,39 @@ class CollectorTests(unittest.TestCase):
             with self.assertRaisesRegex(wifi.WiFiError, "brcmbt4388c2-apple,mriya-u.bin"):
                 radios.require()
 
-    def test_other_macs_get_the_system_set_without_the_refusal(self):
-        with self.collecting("j604", board="mriya") as radios:
-            self.stub_collects()
-            radios.require()
-        self.assertIsNotNone(radios.system)
-        with self.collecting("j314s", board="mriya", read_only=False) as radios:
-            files = self.stub_collects()
-            radios.require()
-        self.assertFalse([n for n in files if n.endswith(".bin") and "brcmfmac" in n])
+    def test_any_c2_board_takes_the_system_set_whatever_the_machine_id(self):
+        for machine, board in (("j604", "mriya"), ("j999", "hostomel")):
+            self.bt_board = board
+            with self.subTest(machine=machine), self.collecting(machine, board=board) as radios:
+                files = self.stub_collects()
+                radios.require()
+            self.assertEqual(radios.system, str(self.system))
+            self.assertEqual(files[f"brcm/brcmfmac4388c2-pcie.apple,{board}.bin"].data, FIRMWARE)
 
-    def test_the_neo_keeps_recovery_and_reads_no_board(self):
-        def no_board():
-            raise AssertionError("the Neo reads no Broadcom board")
+    def test_boards_outside_the_c2_directory_keep_recoverys_set(self):
+        # An M1-to-M3 board: Recovery carries it, the installed system (in
+        # this fixture) does not, and the C2 requirement does not apply.
+        self.bt_board = "hostomel"
+        for read_only in (True, False):
+            with self.subTest(read_only=read_only), self.collecting("j314s", board="kanaha", read_only=read_only) as radios:
+                files = self.stub_collects()
+                radios.require()
+            self.assertIsNone(radios.system)
+            self.assertEqual(files["brcm/brcmfmac4387c3-pcie.apple,kanaha.bin"].data, b"c3 firmware")
 
-        with mock.patch.object(wifi, "system_tree", lambda path: str(self.system)):
-            with wifi.collectors(self.stub, UPSTREAM, "j700", read_board=no_board) as radios:
+    def test_no_broadcom_board_keeps_recovery_without_the_system_tree(self):
+        # The MacBook Neo's ADT has no Broadcom wlan board: read_board gives
+        # None and the installed system is not consulted.
+        def no_system(path):
+            raise AssertionError("no Broadcom board, no system tree")
+
+        with mock.patch.object(wifi, "system_tree", no_system):
+            with wifi.collectors(self.stub, UPSTREAM, "j700", read_board=lambda: None) as radios:
                 self.stub_collects()
                 radios.require()
         self.assertIsNone(radios.system)
+        self.assertIsNone(radios.board)
+        self.assertEqual(radios.sources, [radios.wifi])
 
     def test_archive_without_recoverys_tree_is_refused(self):
         with self.collecting("j614s"):

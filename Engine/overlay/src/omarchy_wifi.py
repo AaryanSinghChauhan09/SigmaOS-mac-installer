@@ -16,9 +16,15 @@ alias by itself instead of the directory around it. The stub collects Wi-Fi
 from the running system's /usr/share/firmware/wifi when that tree carries this
 Mac's board (the ADT wlan node's module-instance), and from Recovery
 otherwise. The fallback archive then keeps the tree the package came from, so
-a re-extraction on Linux gives the same set. On the M4 Pro and M4 Max laptops
-a package without its board's Wi-Fi or Bluetooth is refused rather than
-installing a Mac without radios.
+a re-extraction on Linux gives the same set.
+
+The refusal is keyed on what the Mac presents. When the ADT has a Broadcom
+wlan board and that board's files sit in the directory upstream skips, in
+Recovery or in the installed macOS, a package without the board's Wi-Fi or
+Bluetooth is refused rather than installing a Mac without radios; so is a
+Broadcom board no source carries at all. The ADT names the board but not the
+chip revision (an M4's wlan function says wlan-pcie,bcm4387 for its BCM4388),
+so the chip comes from the directories holding the board's files.
 """
 import contextlib
 import logging
@@ -39,15 +45,14 @@ RECOVERY_FIRMWARE = ["-C", "recovery/usr/share", "firmware"]
 # <board>-<sku> before <board> and the chip's generic name.
 ANTENNA_SKUS = ("ID", "X0", "X2", "X3")
 
-# M4 Pro and M4 Max laptops and the Wi-Fi board of their BCM4388 rev C2 (the
-# ADT wlan node's module-instance). The M4 Max boards share their M4 Pro
-# sibling's board, as every M1 to M3 Pro/Max pair does.
-M4_PRO_MAX_WIFI = {
-    "j614s": ("4388c2", "mriya"),
-    "j614c": ("4388c2", "mriya"),
-    "j616s": ("4388c2", "hostomel"),
-    "j616c": ("4388c2", "hostomel"),
-}
+# The directory upstream's load skips (the rule collection_class drops), and
+# the chip name its files get in the package.
+UPSTREAM_SKIPPED = "C-4388__s-C2"
+SKIPPED_CHIP = "4388c2"
+
+# The ADT's wlan PCIe function is compatible with wlan-pcie,bcm<chip> and
+# wlan-pcie,bcm on every Broadcom Mac.
+BROADCOM_WLAN = "wlan-pcie,bcm"
 
 _BOARD = re.compile(r"[a-z][a-z0-9]{0,31}")
 
@@ -126,9 +131,20 @@ def admitted(value):
     return text if _BOARD.fullmatch(text) else None
 
 
+def broadcom(value):
+    """Whether an ADT compatible value names a Broadcom wlan function."""
+    if isinstance(value, str):
+        value = value.encode()
+    if not isinstance(value, bytes):
+        return False
+    return any(entry.startswith(BROADCOM_WLAN.encode()) for entry in value.split(b"\0"))
+
+
 def board(run=subprocess.run):
-    """This Mac's Wi-Fi board, the ADT wlan node's module-instance (the name
-    Linux gets as brcm,board-type), or None when no such node exists."""
+    """This Mac's Broadcom Wi-Fi board: the ADT wlan node's module-instance
+    (the name Linux gets as brcm,board-type) when the ADT also has a Broadcom
+    wlan function. None when the ADT has no Broadcom wlan board, as on the
+    MacBook Neo, or its name is unusable."""
     try:
         output = run(
             ["/usr/sbin/ioreg", "-a", "-r", "-p", "IODeviceTree", "-n", "wlan", "-d", "1"],
@@ -138,8 +154,11 @@ def board(run=subprocess.run):
         found = plistlib.loads(output) if output.strip() else []
     except (OSError, subprocess.CalledProcessError, plistlib.InvalidFileException, ValueError):
         return None
-    for node in found if isinstance(found, list) else [found]:
-        value = node.get("module-instance") if isinstance(node, dict) else None
+    nodes = [node for node in (found if isinstance(found, list) else [found]) if isinstance(node, dict)]
+    if not any(broadcom(node.get("compatible")) for node in nodes):
+        return None
+    for node in nodes:
+        value = node.get("module-instance")
         if isinstance(value, bytes):
             return admitted(value)
     return None
@@ -169,6 +188,14 @@ def carries_wifi(outputs, board):
         and ("-pcie.apple," + board + "." in name or "-pcie.apple," + board + "-" in name)
         for name, data in outputs.items()
     )
+
+
+def board_chips(outputs, board):
+    """The chips whose directories hold this board's files in a converted
+    set, any file type: {"4388c2", ...}. A board can sit under more than one
+    revision of a chip."""
+    pattern = re.compile(r"brcm/brcmfmac([0-9a-z]+)-pcie\.apple," + re.escape(board) + r"[-.]")
+    return {match.group(1) for match in map(pattern.match, outputs) if match}
 
 
 def wifi_source(board, system):
@@ -273,17 +300,28 @@ class Radios:
         self.wifi = None
         self.bluetooth = None
         self.system = None
+        # Every converted Wi-Fi set read: Recovery's, and the installed
+        # system's when it was readable.
+        self.sources = []
 
     def require(self):
-        """An M4 Pro or M4 Max package must bring up its own board's radios."""
-        required = M4_PRO_MAX_WIFI.get(self.machine)
-        if required is None:
-            return
-        chip = required[0]
+        """A Mac whose ADT names a Broadcom Wi-Fi board must get firmware for
+        it from some source, and when that board's files sit in the directory
+        upstream skips, the package must bring up its radios."""
         if self.board is None:
-            raise WiFiError(f"{self.machine}: the device tree names no Wi-Fi board")
-        missing = missing_wifi(self.wifi or {}, chip, self.board)
-        missing += missing_bluetooth(self.bluetooth or {}, chip, self.board)
+            return
+        chips = set()
+        for outputs in self.sources:
+            chips |= board_chips(outputs, self.board)
+        if not chips:
+            raise WiFiError(
+                f"{self.machine}: neither Recovery nor the installed macOS has firmware "
+                f"for the device tree's Wi-Fi board {self.board}"
+            )
+        if SKIPPED_CHIP not in chips:
+            return
+        missing = missing_wifi(self.wifi or {}, SKIPPED_CHIP, self.board)
+        missing += missing_bluetooth(self.bluetooth or {}, SKIPPED_CHIP, self.board)
         if missing:
             raise WiFiError(f"{self.machine}: the firmware package lacks " + ", ".join(missing))
 
@@ -299,10 +337,13 @@ def collectors(stub, upstream, machine, read_board=board, system_path=SYSTEM_WIF
     def wifi(source_path):
         recovery = collection(source_path)
         radios.wifi = converted(recovery)
-        if machine == "j700":
-            # The MacBook Neo's MT7932 radios are collected on their own.
-            return recovery
+        radios.sources = [radios.wifi]
         radios.board = read_board()
+        if radios.board is None:
+            # No Broadcom wlan board in the ADT: Recovery's set, as upstream
+            # collects it. The MacBook Neo's MT7932 radios are collected on
+            # their own.
+            return recovery
         system = None
         tree = system_tree(system_path)
         if tree is not None:
@@ -311,10 +352,12 @@ def collectors(stub, upstream, machine, read_board=board, system_path=SYSTEM_WIF
             except (OSError, ValueError, AssertionError) as error:
                 # An unreadable system volume leaves Recovery as the only source.
                 log.warning(f"Installed macOS Wi-Fi firmware unreadable: {error}")
-        if system is not None and wifi_source(radios.board, converted(system)) == "system":
-            log.info(f"Collecting Wi-Fi for board {radios.board} from the installed macOS")
-            radios.wifi, radios.system = converted(system), tree
-            return system
+        if system is not None:
+            radios.sources.append(converted(system))
+            if wifi_source(radios.board, radios.sources[-1]) == "system":
+                log.info(f"Collecting Wi-Fi for board {radios.board} from the installed macOS")
+                radios.wifi, radios.system = radios.sources[-1], tree
+                return system
         return recovery
 
     def bluetooth(source_path):
