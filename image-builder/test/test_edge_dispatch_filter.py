@@ -43,7 +43,7 @@ def write_repo(path: Path, packages: dict[str, dict]) -> Path:
 
 
 EDGE_ORDER = ("omarchy", "asahi-alarm", "core", "extra", "alarm", "aur")
-CANDIDATE_ORDER = ("asahi-alarm", "core", "extra", "alarm", "aur", "omarchy")
+LAST_ORDER = ("asahi-alarm", "core", "extra", "alarm", "aur", "omarchy")
 
 
 def template(order) -> bytes:
@@ -95,7 +95,7 @@ class EdgeDispatchFilterTest(unittest.TestCase):
         cls.base = Path(cls.tmp.name)
         # Edge's order, [omarchy] first, and a runtime whose template puts it last.
         cls.database, cls.runtime, cls.settings = make_edge(cls.base / "edge")
-        cls.last = make_edge(cls.base / "edge-last", CANDIDATE_ORDER)
+        cls.last = make_edge(cls.base / "edge-last", LAST_ORDER)
         # Arch Linux ARM's extra carries hyprland, a vulkan-driver of its own, a walker too old for
         # omarchy-dev, a libthing new enough for walker and a provider of zram-generator.
         cls.repos = cls.base / "repos"
@@ -153,7 +153,7 @@ class EdgeDispatchFilterTest(unittest.TestCase):
 
     def test_the_runtime_template_orders_the_repositories(self):
         self.assertEqual(self.decide()["repository_order"], list(EDGE_ORDER))
-        self.assertEqual(self.decide(edge=self.last)["repository_order"], list(CANDIDATE_ORDER))
+        self.assertEqual(self.decide(edge=self.last)["repository_order"], list(LAST_ORDER))
 
     def test_a_package_both_omarchy_and_alarm_carry_is_omarchys_on_edge(self):
         decision = self.decide("hyprland", "nvidia-utils")
@@ -197,7 +197,7 @@ class EdgeDispatchFilterTest(unittest.TestCase):
         self.assertIn("archive=$candidates/$(candidate_archive omarchy-settings)", builder)
         self.assertEqual(edge_filter.TEMPLATE,
                          "usr/share/omarchy/default/pacman/aarch64-apple/pacman-{channel}.conf")
-        self.assertIn("repository_order=(" + " ".join(CANDIDATE_ORDER) + ")", builder)
+        self.assertIn("repository_order=(" + " ".join(EDGE_ORDER) + ")", builder)
 
     def test_without_the_other_repositories_it_over_matches(self):
         decision = self.decide("hyprland", "nvidia-utils", "claude-code", repos=False)
@@ -313,6 +313,27 @@ class EdgeDispatchFilterTest(unittest.TestCase):
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 1)
         self.assertIn("edge aarch64", result.stderr)
+
+
+class BuilderSeedsTest(unittest.TestCase):
+    BUILDER = Path(__file__).resolve().parents[1] / 'bin/build-mac-image'
+
+    def tools(self, seeds):
+        return [n for n in seeds if n.endswith(('-scripts', '-fwextract'))]
+
+    def test_the_tools_follow_the_builders_selection(self):
+        self.assertEqual(edge_filter.platform_tools(self.BUILDER),
+                         {'aurora-scripts': 'asahi-scripts', 'aurora-fwextract': 'asahi-fwextract'})
+        both = {'aurora-scripts': {}, 'aurora-fwextract': {}, 'lzfse': {}}
+        self.assertEqual(self.tools(edge_filter.builder_seeds(self.BUILDER, both)), ['aurora-scripts', 'aurora-fwextract'])
+        # aurora-scripts alone keeps asahi-alarm's extractor, which pulls lzfse.
+        self.assertEqual(self.tools(edge_filter.builder_seeds(self.BUILDER, {'aurora-scripts': {}, 'lzfse': {}})),
+                         ['aurora-scripts', 'asahi-fwextract'])
+        # aurora-fwextract without aurora-scripts, or neither, keeps asahi-alarm's pair.
+        for entries in ({'aurora-fwextract': {}}, {}):
+            with self.subTest(sorted(entries)):
+                self.assertEqual(self.tools(edge_filter.builder_seeds(self.BUILDER, entries)),
+                                 ['asahi-scripts', 'asahi-fwextract'])
 
 
 if __name__ == "__main__":

@@ -9,9 +9,9 @@ yet (an empty catalog) is the only exception. `refused` names each board that
 stays out and why. `developer` names each board only a developer build's
 sealed catalog may add, with its own image; channel catalogs never carry one,
 so check-catalog rejects it like any unknown board. `untested` marks the
-supported Macs no image has been qualified on yet (the M3 generation and the
-Neo, which the testing team qualifies on edge), with the note a catalog shows
-for each.
+supported Macs no image has been qualified on yet, with the note a catalog
+shows for each; the testing team qualifies them on edge. It is empty: the
+M3 boards and the Neo have been installed and run on real hardware.
 
 Usage:
   supported_models.py check-catalog FILE   exit 1 unless FILE covers every Mac

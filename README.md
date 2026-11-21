@@ -2,7 +2,7 @@
 
 A macOS app that installs [Omarchy](https://github.com/omacom/omarchy) on an Apple Silicon Mac, next to macOS. The app is named **Omarchy Installer** and uses the `org.omarchy.installer` identifiers (`Packaging/identity.conf`). It was extracted from [maralcbr/omarchy-mx-mac](https://github.com/maralcbr/omarchy-mx-mac) into [omacom/omarchy-mac-installer](https://github.com/omacom/omarchy-mac-installer); the Git history and attribution are preserved (see [extraction provenance](docs/extraction.md)).
 
-Status: every published installer release is a GitHub pre-release; the current notarized app is [Omarchy Installer 2.3.15](https://github.com/omacom/omarchy-mac-installer/releases/tag/v2.3.15); newer ones appear on the [releases page](https://github.com/omacom/omarchy-mac-installer/releases). Since installer 2.3.14 the app opens on the stable channel by default, which offers Omarchy 4.5. See [Release channels](#release-channels).
+Status: every published installer release is a GitHub pre-release; the current notarized app is [Omarchy Installer 2.3.16](https://github.com/omacom/omarchy-mac-installer/releases/tag/v2.3.16); newer ones appear on the [releases page](https://github.com/omacom/omarchy-mac-installer/releases). Since installer 2.3.14 the app opens on the stable channel by default, which offers Omarchy 4.5. See [Release channels](#release-channels).
 
 Installing Omarchy changes the partition layout of your Mac's internal disk and its boot policy. Read [Before you install](#before-you-install) first.
 
@@ -38,7 +38,7 @@ Not supported:
 - The M3 Ultra Mac Studio (`apple,j575d`): the pinned v0.9.2 engine cannot inspect or plan it.
 - M4 and later, for example the MacBook Pro 14-inch M4 Pro (`apple,j614s`). Public builds keep these blocked until official support and physical qualification both exist.
 
-Untested: the M3 Macs and the MacBook Neo are marked untested in `supported-models.json`. According to [`docs/mac-release-pipeline.md`](docs/mac-release-pipeline.md#qualification-on-edge), the testing team qualifies them on real hardware on edge, after an edge release.
+The 11 supported M3 boards and the MacBook Neo have been installed and run on real hardware. A newly supported board that has not been tested yet is listed under `untested` in `supported-models.json` until the testing team qualifies it on edge ([`docs/mac-release-pipeline.md`](docs/mac-release-pipeline.md#qualification-on-edge)). No board is listed there today.
 
 Why a catalog check exists: `make-unsigned-catalog.py` refuses inputs that miss, add or refuse a board, and `publish-channels envelope` refuses to wrap a catalog that lists a Mac but leaves any of them out or disabled. Only an empty "No Mac release yet" catalog lists none. `os-promote` does not re-check an envelope staged before this rule, so a rollback to an older catalog stays possible.
 
@@ -65,14 +65,14 @@ This installs **Omarchy Installer** into `/Applications` and opens it; continue 
 
 To install from the disk image instead:
 
-1. Download [`Omarchy-Mac-Installer-2.3.15.dmg`](https://github.com/omacom/omarchy-mac-installer/releases/download/v2.3.15/Omarchy-Mac-Installer-2.3.15.dmg) and [`Omarchy-Mac-Installer-2.3.15.dmg.sha256`](https://github.com/omacom/omarchy-mac-installer/releases/download/v2.3.15/Omarchy-Mac-Installer-2.3.15.dmg.sha256) from the [2.3.15 release](https://github.com/omacom/omarchy-mac-installer/releases/tag/v2.3.15). If a newer `Omarchy Installer <version>` release is on the [releases page](https://github.com/omacom/omarchy-mac-installer/releases), use that instead. Ignore the `catalog-*` and `engine-*` pre-releases: they hold data the app reads, not the app.
+1. Download [`Omarchy-Mac-Installer-2.3.16.dmg`](https://github.com/omacom/omarchy-mac-installer/releases/download/v2.3.16/Omarchy-Mac-Installer-2.3.16.dmg) and [`Omarchy-Mac-Installer-2.3.16.dmg.sha256`](https://github.com/omacom/omarchy-mac-installer/releases/download/v2.3.16/Omarchy-Mac-Installer-2.3.16.dmg.sha256) from the [2.3.16 release](https://github.com/omacom/omarchy-mac-installer/releases/tag/v2.3.16). If a newer `Omarchy Installer <version>` release is on the [releases page](https://github.com/omacom/omarchy-mac-installer/releases), use that instead. Ignore the `catalog-*` and `engine-*` pre-releases: they hold data the app reads, not the app.
 2. Check the download. From the folder that holds both files:
 
    ```sh
-   shasum -a 256 -c Omarchy-Mac-Installer-2.3.15.dmg.sha256
+   shasum -a 256 -c Omarchy-Mac-Installer-2.3.16.dmg.sha256
    ```
 
-   Each release's notes also give the digest; for 2.3.15 it is `a6ee0cc214fff9f9d194772a5b4492c055c8f74d8572c1183874449d445f3d11`.
+   Each release's notes also give the digest; for 2.3.16 it is `0b70717b0bfa3277f41159b5de4a0cab9f75dda9ba64f13d4b4a02a7860dd027`.
 3. Open the disk image and move **Omarchy Installer** to `/Applications`. The disk image holds the app and an `/Applications` link.
 4. Open the app. It checks the Mac model, macOS version, power, FileVault and free disk space, then shows the plan. Choose the disk size, tick the backup box, click **Install**, and enter your macOS administrator account and password when asked. Allow the app to add its helper if macOS asks. The helper shows up under Login Items in System Settings.
 5. Keep the Mac awake and plugged in until the app says the first stage is done. Then follow the on-screen **Finish setup** steps in Recovery (see [What the installer does](#what-the-installer-does)).
@@ -83,13 +83,13 @@ The download is a plain app, not a command-line installer. There is no `curl | s
 
 ## Release channels
 
-The app can read one of three catalogs, all signed with the Omacom catalog key and fetched from `https://mac.omarchy.org/v1/`:
+The app can read one of three catalogs, all signed with the Omacom catalog key. Released apps fetch them from this repository's `catalog-<channel>` GitHub pre-releases, for example [`catalog-stable.signed.json`](https://github.com/omacom/omarchy-mac-installer/releases/download/catalog-stable/catalog-stable.signed.json): [`mac-app-release.yml`](.github/workflows/mac-app-release.yml) builds them with `APP_CATALOG_HOST: stopgap`. The installer dmg, engine and images the catalogs point to are served from `https://mac.omarchy.org/v1/`, but the catalogs themselves are not: `https://mac.omarchy.org/v1/catalog-<channel>.signed.json` returns 404. See [`docs/catalog-release.md`](docs/catalog-release.md).
 
 | Channel | Catalog | Use |
 | --- | --- | --- |
 | Stable | `catalog-stable.signed.json` | The default since installer 2.3.14 ([#169](https://github.com/omacom/omarchy-mac-installer/pull/169)). Offers Omarchy 4.5. |
 | Release candidate (rc) | `catalog-rc.signed.json` | Release candidates before they reach stable. Was the default in installer 2.3.13 ([#159](https://github.com/omacom/omarchy-mac-installer/pull/159)). |
-| Edge | `catalog-edge.signed.json` | Where the M3 Macs and the MacBook Neo are qualified on real hardware (see [Supported Macs](#supported-macs)). |
+| Edge | `catalog-edge.signed.json` | Where the testing team qualifies new images and newly supported Macs on real hardware (see [Supported Macs](#supported-macs)). |
 
 The channels match Omarchy's. Dev is a developer choice made after installation, not an installer channel.
 
@@ -124,7 +124,8 @@ If a removal record is unfinished, the app will not install or remove again unti
 
 **Recover a failed or interrupted install.**
 
-- A failed disk-space step reports that the disk has not been changed. Use **Check available space** to make a new plan.
+- If the engine refuses the plan before the resize starts, the app says "The disk has not been changed", and it has not. Use **Check available space** to make a new plan.
+- A resize that fails, stalls or is interrupted in "Preparing disk space" can leave the disk changed: the macOS container can be shrunk while its partition is not, and the app can then refuse to continue (`inconsistent macOS resize metrics`, or `AmbiguousMutationState: apfs_preparation_started has no completion checkpoint`). See [#196](https://github.com/omacom/omarchy-mac-installer/issues/196), [#199](https://github.com/omacom/omarchy-mac-installer/issues/199) and [#210](https://github.com/omacom/omarchy-mac-installer/issues/210). Don't force quit the app or kill `diskutil` while the step runs, even if it looks stuck. If it fails, don't retry yet: post `diskutil list internal` and `diskutil apfs list` in [#199](https://github.com/omacom/omarchy-mac-installer/issues/199); [#196](https://github.com/omacom/omarchy-mac-installer/issues/196) has a workaround that returned the space.
 - If Apple's startup authorization step fails, use **Retry Recovery authorization**; the app first rechecks the plan, the installed files and the last completed step and cannot resize the disk or rewrite the system in the retry.
 - To start over, quit the app and reopen it, or use **Start over**. A simulation-only **Reset simulation** exists in debug builds.
 

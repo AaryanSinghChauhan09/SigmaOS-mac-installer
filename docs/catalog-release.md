@@ -1,6 +1,6 @@
 # Mac catalog release
 
-`.github/workflows/mac-catalog.yml` signs and publishes a channel catalog that pins one uploaded image, its engine and its `installer_data.json` by digest. It is a reusable workflow (`workflow_call`) for the edge publish trigger and can be run by hand (`workflow_dispatch`). It writes `edge` from an edge image and `rc` from an rc-lane image (built from the RC channel for a release tag and named from it, `omarchy-mac-4.5.0-rc2-r1-<date>-<package set id>`); both need passing VM evidence for the payload's sha256. An rc name carries no image id, so catalog-rc is also tied to the rc image itself: the evidence must record that image (`image`), the payload must be its rc zip (`omarchy-<date>-aarch64-apple-silicon-mac-rc-os-package.zip`, the name's date), and the payload, its parts and `installer_data.json` must sit in that image's own release. `prepare` and the signing job's `check-evidence` both refuse anything else, such as an edge payload and its evidence under an rc name. Stable catalogs come only from `.github/workflows/mac-promote.yml` (see [Promotion](#promotion-parked), parked), which can also re-sign rc. Both sign through `.github/workflows/mac-catalog-sign.yml`, the only workflow that reads the catalog key.
+`.github/workflows/mac-catalog.yml` signs and publishes a channel catalog that pins one uploaded image, its engine and its `installer_data.json` by digest. It is a reusable workflow (`workflow_call`) for the edge publish trigger and can be run by hand (`workflow_dispatch`). It writes `edge` from an edge image, `rc` from an rc-lane image (built from the RC channel for a release tag and named from it, `omarchy-mac-4.5.0-rc2-r1-<date>-<package set id>`) and `stable` from a stable-lane image (built for a final tag, `omarchy-mac-4.5.0-r2-<date>-<package set id>`); each needs passing VM evidence for the payload's sha256. An rc or stable name carries no image id, so catalog-rc and catalog-stable are also tied to the image itself: the evidence must record that image (`image`), the payload must be its zip for the lane (`omarchy-<date>-aarch64-apple-silicon-mac-<channel>-os-package.zip`, the name's date), and the payload, its parts and `installer_data.json` must sit in that image's own release. `prepare` and the signing job's `check-evidence` both refuse anything else, such as an edge payload and its evidence under an rc name. Stable catalogs come from this workflow too: the release pipeline calls it with `channel: stable` for a final tag (stable r2 was first signed that way in [run 41969347232](https://github.com/omacom/omarchy-mac-installer/actions/runs/41969347232), 2026-11-05), and a `workflow_dispatch` with `channel=stable` re-signs a published stable image with new pins ([run 44647538695](https://github.com/omacom/omarchy-mac-installer/actions/runs/44647538695) moved stable r2 to engine `v0.9.2-omarchy.20261106.0f73bea79639` on 2026-11-20). `.github/workflows/mac-promote.yml` (see [Promotion](#promotion-parked), parked) can also write rc and stable, by re-signing another channel's catalog. Both sign through `.github/workflows/mac-catalog-sign.yml`, the only workflow that reads the catalog key.
 
 ## The Omacom catalog key
 
@@ -74,6 +74,24 @@ The VM acceptance job (`mac-acceptance.yml`) writes and attests it; the upload (
 
 The app compiled from `Release/` reads `mac.omarchy.org/v1`, so it does not see the stopgap catalogs. Until ticket 13, `mac-app-release.yml` (`APP_CATALOG_HOST: stopgap`) therefore builds every app with a `release.json` from `scripts/make-release-descriptor --stopgap`, naming each channel's stopgap catalog and the trust root in `Release/`; the release guard accepts exactly those URLs besides the catalog base. Ticket 13 sets `APP_CATALOG_HOST: base`, and apps built before then keep reading the stopgap releases, so those must stay in place until such apps are retired.
 
+## Lane holds
+
+The app installs with the engine its channel's signed catalog pins (each model's `engineDigest`), not the engine it bundles. So an rc or stable catalog must pin the engine `Engine/source-lock.json` pins (`validation_artifact.sha256`), or a new app ships with an older engine's bugs: installer 2.3.16 carried the fix for "native Recovery app differs from its engine manifest" while catalog-rc and catalog-stable still pinned `v0.9.2-omarchy.20261022.31425f17fb9b`.
+
+`catalog_release.py check-engine` enforces it. The `prepare` jobs of `mac-catalog.yml` and `mac-promote.yml` run it and put its decision in the run summary before anyone is asked to approve; the signing job runs it again for both gates, before the key is read. Every model must pin one well-formed digest. For rc and stable it must be the lock's, read from the run's own checkout (the commit the run started from). Edge is exempt.
+
+A rollback or a deliberate hold keeps another engine only when the owner names its exact digest in the `allow-engine-digest` input (`sha256:<64 hex>`) of `mac-catalog.yml` or `mac-promote.yml`. The input is refused for edge, and refused unless the catalog pins exactly that digest. The summary then reads `engine_gate=held`, with the catalog's engine and the lock's. Promotion carries the source's engine, so promoting an off-lock catalog needs its own exception for the target lane; the input never waives another gate, such as the refusal to promote a final tag built on rc. A lane held on an older engine is recorded below with its owner and reason. The hold ends only when a real (not dry-run) run re-signs the lane on the locked engine with no `allow-engine-digest` (a normal rc or stable run does this) and every host serving the lane reads the new catalog back; delete its row then, not before.
+
+| Lane | Engine kept | Catalog (as observed 2026-11-20) | Owner | Since | Reason | Effect |
+| --- | --- | --- | --- | --- | --- | --- |
+| rc | `v0.9.2-omarchy.20261022.31425f17fb9b`, `sha256:5fea6b561e6fb82260f573bae099c70ba2e9998df56d38cf285987432320d4b5` (the lock pins `v0.9.2-omarchy.20261106.0f73bea79639`, `sha256:a60855716be5cea4f2113a368f784a5fe55a7034602f48fac8bb6e79f796fd7a`) | `catalog-rc.signed.json` sequence 1793801884 (2026-11-04T14:18:04Z), catalog sha256 `12e3bb17c93ca86d4eba4e4b842c6464cf80b7605f3651b921b613e5455bc8b5`; image `omarchy-mac-4.5.0-rc-r1-2026.11.04-f1738add15fc`; `installer.latestVersion` 2.3.14 | maralcbr | 2026-11-20 | Owner decision; stable carries the fix | rc installs can still fail at "Writing boot files" with "native Recovery app differs from its engine manifest", the failure reported in [#213](https://github.com/omacom/omarchy-mac-installer/issues/213) and fixed in engine 20261106 |
+
+While the rc hold stands, any rc re-sign that keeps this engine must pass `allow-engine-digest=sha256:5fea6b561e6fb82260f573bae099c70ba2e9998df56d38cf285987432320d4b5`; one on the locked engine passes no input and ends the hold once published and read back.
+
+Outside the workflows, nothing runs the gate for you. Before a break-glass signing with `catalog-signing.swift sign-keychain`, copy the catalog to `catalog-<destination channel>.json` (the signed catalog names no channel) and run `python3 scripts/catalog_release.py check-engine --catalog catalog-<channel>.json` on `main`, with `--allow-engine-digest` only for a recorded hold or an owner-approved rollback. Note that file's sha256, sign exactly that file, and before publishing by hand check the envelope carries it with `verify-envelope --expect-sha256 <that sha256>`.
+
+Known gap: `main`'s lock can move after the owner approves a run, and the run still signs against the lock of the commit it started from; a re-run keeps that commit too, so a run started before this gate existed signs without it. Decline such approvals. The long-term fix is a per-lane record of the approved engine digest, checked again at publish time against current policy rather than the run's checkout.
+
 ## Running it
 
 After the workflow is on `main`:
@@ -85,11 +103,26 @@ gh workflow run mac-catalog.yml -R omacom/omarchy-mac-installer -f dry-run=true 
 
 The `sign` job waits for the owner's approval in the run page, in a dry run too: a dry run signs with the real key, then writes only to the runner's scratch directory.
 
+## Release checklist
+
+Each catalog pins its own engine, so an engine in `Engine/source-lock.json` or in an app release reaches users only once their channel's catalog pins it. Installer 2.3.16 shipped with the AppleDouble fix for "native Recovery app differs from its engine manifest" (engine `v0.9.2-omarchy.20261106.0f73bea79639`), while catalog-stable kept pinning `v0.9.2-omarchy.20261022.31425f17fb9b` until it was re-signed on 2026-11-20 ([#213](https://github.com/omacom/omarchy-mac-installer/issues/213)).
+
+- [ ] Every engine pin bump in `Engine/source-lock.json` ([Engine versions](engine-versions.md)) re-signs every channel, edge, rc and stable, each with `mac-catalog.yml` and that channel's own image.
+- [ ] A lane that stays on the older engine is recorded in the pull request that bumps the pin: which lane, which engine it keeps, and why.
+- [ ] App release notes claim an engine fix only for the channels whose catalogs already serve that engine. Check what each channel serves:
+
+  ```bash
+  for c in edge rc stable; do
+    curl -fsSL "https://github.com/omacom/omarchy-mac-installer/releases/download/catalog-$c/catalog-$c.signed.json" |
+      jq -r --arg c "$c" '.catalog | @base64d | fromjson | "\($c) app \(.installer.latestVersion) engine \([.models[].engineVersion] | unique | join(","))"'
+  done
+  ```
+
 ## Promotion (parked)
 
 > **Parked.** rc and stable catalogs come from images built for their lane (`mac-release-pipeline.yml` with a release tag). Promotion re-signs another channel's image instead, so its runtime and channel stay the source's. rc and stable promotion waits for the kernel work. Run `mac-promote.yml` only as a dry run until the owner unparks it. A real promotion needs `dry-run` off, `confirm` set to `promote-<channel>` and `source-sha256` pinning the source catalog, then the owner's approval in `promote` and again in `catalog-release`.
 
-**What a promotion carries.** A promotion keeps every model, pin, preview note and installer requirement of the edge catalog it re-signs (`promote_catalog` in `scripts/catalog_release.py`). Promoting today's edge catalog to rc or stable would therefore ship the unified Aurora image (Aura's m1n1 and Stage 1 until an edge image built with `m1n1-aurora` is published and signed into the catalog, then omacom/m1n1's; the Aurora U-Boot and Mesa, `speakerguardd`), the edge `omarchy-dev` runtime, the MacBook Neo, its `untested` note and app 2.3.0 as the minimum, all unchanged. Nothing narrows that scope. Accepting it is a maintainer decision to record before promotion is unparked.
+**What a promotion carries.** A promotion keeps every model, pin, preview note and installer requirement of the edge catalog it re-signs (`promote_catalog` in `scripts/catalog_release.py`). Promoting today's edge catalog to rc or stable would therefore ship the unified Aurora image (Aura's m1n1 and Stage 1 until an edge image built with `m1n1-aurora` is published and signed into the catalog, then omacom/m1n1's; the Aurora U-Boot and Mesa, `speakerguardd`), the edge `omarchy-dev` runtime, the MacBook Neo, and any preview notes and installer minimum the source catalog carries, all unchanged: a promotion re-signs the source, it does not re-read `supported-models.json`. Nothing narrows that scope. Accepting it is a maintainer decision to record before promotion is unparked.
 
 `.github/workflows/mac-promote.yml` (`workflow_dispatch` only) writes a signed `rc` or `stable` catalog over exactly the bytes a published channel catalog pins. Nothing is built and nothing new is uploaded: the image, engine and `installer_data.json` keep their URLs, sizes and digests; only `sequence` (the current Unix time) and `issuedAt` change. Promotion goes forward only: edge to rc or stable, rc to stable.
 
@@ -111,4 +144,4 @@ gh workflow run mac-promote.yml -R omacom/omarchy-mac-installer -f channel=rc -f
   -f dry-run=false -f confirm=promote-rc -f source-sha256=<source_catalog_sha256>
 ```
 
-A promoted catalog keeps the source's `evidenceRevision` (the image name, `omarchy-mac-edge-...`): it names the image that passed VM acceptance, not the channel. The app compiled from `Release/` reads `mac.omarchy.org/v1`, so stopgap rc and stable catalogs, like edge ones, reach only a preview build pointed at them.
+A promoted catalog keeps the source's `evidenceRevision` (the image name, `omarchy-mac-edge-...`): it names the image that passed VM acceptance, not the channel. Released apps read the stopgap catalogs (see [Hosts](#hosts)), so a promoted rc or stable catalog reaches them once it is published.

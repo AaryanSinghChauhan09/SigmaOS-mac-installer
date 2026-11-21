@@ -118,6 +118,57 @@ class ChannelSetTest(unittest.TestCase):
         database, sha256 = self.snapshot(versions={"m1n1-aurora": "1.6.1.aurora1-3"})
         self.refused("m1n1-aurora 1.6.1.aurora1-3 is below the minimum 1.6.1.aurora20-3", database, sha256)
 
+    def test_an_edge_set_pairing_a_7_3_or_newer_kernel_with_m1n1_aurora_is_refused(self):
+        # omacom/omarchy-pkgs#3025 moves edge to 7.3 behind aura; m1n1-aurora with it is not qualified.
+        for kernel in ("7.3-1", "7.3rc1-1", "7.3.aurora1-1", "7.3.0-1", "7.3.0.aurora0testedgeC-1",
+                       "7.3.2.aurora1-1", "7.4.1.aurora2-1", "1:7.3.0.aurora1-1"):
+            with self.subTest(kernel=kernel):
+                self.work = Path(tempfile.mkdtemp(dir=self.base))
+                database, sha256 = self.snapshot(versions={"linux-aurora": kernel, "linux-aurora-headers": kernel})
+                self.refused(f"edge pairs linux-aurora {kernel} with m1n1-aurora", database, sha256)
+                self.assertFalse((self.work / "set/import.json").exists(), "a refused set records nothing")
+
+    def test_an_edge_set_on_a_7_2_kernel_is_built(self):
+        # Today's edge kernel, the last 7.2 before it, and a 7.2 rollback re-pinned above 7.3 by an epoch.
+        for kernel in ("7.2.11.aurora16-1", "7.2.99-1", "1:7.2.11.aurora16-2"):
+            with self.subTest(kernel=kernel):
+                self.work = Path(tempfile.mkdtemp(dir=self.base))
+                database, sha256 = self.snapshot(versions={"linux-aurora": kernel, "linux-aurora-headers": kernel})
+                packages = {p["name"]: p for p in self.freeze(database, sha256)["packages"]}
+                self.assertEqual(packages["linux-aurora"]["version"], kernel)
+                self.assertIn("m1n1-aurora", packages)
+
+    def test_rc_and_stable_sets_are_left_alone_by_the_edge_kernel_guard(self):
+        # They change only through promotion; the guard is edge's alone.
+        for lane, tag in (("rc", fixtures.RC_RELEASE), ("stable", fixtures.STABLE_RELEASE)):
+            for kernel in ("7.2.11.aurora16-1", "7.3.0.aurora0testedgeC-1"):
+                with self.subTest(lane=lane, kernel=kernel):
+                    self.work = Path(tempfile.mkdtemp(dir=self.base))
+                    database, sha256 = fixtures.make_channel(self.work / "edge", self.channel, lane=lane,
+                                                             versions={"linux-aurora": kernel,
+                                                                       "linux-aurora-headers": kernel})
+                    summary = channel_set.snapshot(database, sha256, lane, self.work / "edge/packages",
+                                                   self.work / "set", self.trust, tag)
+                    versions = {p["name"]: p["version"] for p in summary["packages"]}
+                    self.assertEqual(versions["linux-aurora"], kernel)
+                    self.assertIn("m1n1-aurora", versions)
+
+    def test_the_guard_compares_the_kernel_by_version_not_by_name(self):
+        def chosen(kernel, loader="m1n1-aurora"):
+            return [("linux-aurora", "boot", {"NAME": ["linux-aurora"], "VERSION": [kernel]}),
+                    (loader, "boot", {"NAME": [loader], "VERSION": ["1.6.1.aurora23-4"]})]
+        # A release candidate sorts below 7.3 by vercmp, with or without a separator: still 7.3.
+        for kernel in ("7.3rc1-1", "7.3-rc1-1", "7.3.aurora1-1", "7.3.0.aurora0testedgeD-1", "7.10.0-1", "8.0.0-1",
+                       "aurora-1"):
+            with self.subTest(kernel=kernel), self.assertRaisesRegex(
+                    ValueError, f"^edge pairs linux-aurora {kernel} with m1n1-aurora; m1n1-aurora is not qualified"):
+                channel_set.refuse_untested_boot_pair(chosen(kernel), "edge")
+        for kernel in ("7.2.11.aurora16-1", "7.2rc1-1", "7.2.0-1", "6.19.9-1", "6.30-1", "2:7.2.11-1"):
+            channel_set.refuse_untested_boot_pair(chosen(kernel), "edge")
+        channel_set.refuse_untested_boot_pair(chosen("7.3.0.aurora0testedgeC-1", "aura"), "edge")
+        for lane in ("rc", "stable"):
+            channel_set.refuse_untested_boot_pair(chosen("7.3.0.aurora0testedgeC-1"), lane)
+
     def test_aura_and_m1n1_neo_left_in_the_database_are_never_chosen(self):
         database, sha256 = self.snapshot(extra=[("aura", "0.1.0.r20261023-1"), ("m1n1-neo", "1.6.1.aurora16-1")])
         names = {p["name"] for p in self.freeze(database, sha256)["packages"]}
