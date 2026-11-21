@@ -1496,6 +1496,21 @@ monitor_free_aura() {
   done
   return 1
 }
+# The kernel an execute-window Mac runs inside the CTXR window: linux-aurora 7.3
+# or later (CONFIG_ARM64_CTXR_EXECMEM, omacom/omarchy-pkgs#3025). Its pkgver's
+# major.minor, without epoch or pkgrel, as the edge kernel guard compares it.
+ctxr_kernel() {
+  local desc version
+  for desc in "$target"/var/lib/pacman/local/linux-aurora-[0-9]*/desc; do
+    [[ -f $desc ]] || continue
+    version=$(sed -n '/^%VERSION%$/{n;p;q;}' "$desc")
+    version=${version#*:}
+    [[ $version =~ ^([0-9]+)\.([0-9]+) ]] || return 1
+    (( BASH_REMATCH[1] > 7 || (BASH_REMATCH[1] == 7 && BASH_REMATCH[2] >= 3) ))
+    return
+  done
+  return 1
+}
 # aura's Mach-O Stage 1 is its fileset boot object, build/aura-boot.macho
 # (tools/macho_boot_object.py: build/aura.bin in __TEXT_EXEC, the segments
 # kmutil requires), which an aura package installs here. Its build/aura.macho,
@@ -1507,6 +1522,8 @@ stage_confined_boot_payloads() {
   local stage2="$target/boot/efi/m1n1/boot.bin"
   [[ -e $stage1 || -L $stage1 ]] || return 0
   monitor_free_aura || return 0
+  ctxr_kernel ||
+    fail "the image's aura boots M4 and later Macs, but its linux-aurora is not 7.3 or later, the kernel they run inside the CTXR window"
   [[ -s $stage1 && ! -L $stage1 && -s $stage2 && ! -L $stage2 ]] ||
     fail "the image lacks matched aura Mach-O Stage 1 and Stage 2 payloads for M4 and later Macs"
   (( $(wc -c <"$stage2") <= CONFINED_STAGE2_MAX_BYTES )) ||

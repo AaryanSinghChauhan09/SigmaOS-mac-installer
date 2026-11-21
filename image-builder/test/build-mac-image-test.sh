@@ -1203,6 +1203,12 @@ pass "a set without a boot loader record (rc, stable, candidate sets) keeps m1n1
 (
   target=$scratch/confined-boot-target
   mkdir -p "$target/usr/share/aura/stage1" "$target/boot/efi/m1n1"
+  kernel() { # kernel <version>: the installed linux-aurora
+    rm -rf "$target"/var/lib/pacman/local/linux-aurora-*
+    mkdir -p "$target/var/lib/pacman/local/linux-aurora-$1"
+    printf '%%NAME%%\nlinux-aurora\n\n%%VERSION%%\n%s\n' "$1" >"$target/var/lib/pacman/local/linux-aurora-$1/desc"
+  }
+  kernel 7.3.0.aurora0testedgeC-1
   printf 'assembled Stage 2' >"$target/boot/efi/m1n1/boot.bin"
   stage_confined_boot_payloads
   [[ ! -e $target/boot/efi/aurora/stage1.macho && ! -e $target/boot/efi/m1n1/boot-ctxr.bin ]] || exit 1
@@ -1224,6 +1230,18 @@ pass "a set without a boot loader record (rc, stable, candidate sets) keeps m1n1
     rm -r "$target/var/lib/pacman/local" "$target/boot/efi/m1n1/boot-ctxr.bin" "$target/boot/efi/aurora/stage1.macho"
   fi
   : >"$target/usr/share/aura/monitor-free"
+  # A monitor-free aura beside a kernel older than 7.3 would boot an M4 on one CPU.
+  for old in 7.2.11.aurora16-1 1:7.2.11-2; do
+    kernel "$old"
+    if (fail() { builder_fail "$@"; }; stage_confined_boot_payloads) >/dev/null 2>&1; then
+      exit 1
+    fi
+  done
+  rm -rf "$target"/var/lib/pacman/local/linux-aurora-*
+  if (fail() { builder_fail "$@"; }; stage_confined_boot_payloads) >/dev/null 2>&1; then
+    exit 1
+  fi
+  kernel 7.4.1.aurora2-1
   stage_confined_boot_payloads
   cmp "$target/usr/share/aura/stage1/aura-boot.macho" "$target/boot/efi/aurora/stage1.macho" || exit 1
   cmp "$target/boot/efi/m1n1/boot.bin" "$target/boot/efi/m1n1/boot-ctxr.bin" || exit 1
@@ -1232,7 +1250,7 @@ pass "a set without a boot loader record (rc, stable, candidate sets) keeps m1n1
     exit 1
   fi
 ) || fail "the M4 boot payloads are missing, mismatched or oversized"
-pass "a monitor-free aura image (marker or version) stages aura-boot.macho, never the linker aura.macho, and the confined Stage 2; others stage neither; over 16 MiB is refused"
+pass "a monitor-free aura image (marker or version) on linux-aurora 7.3 or later stages aura-boot.macho, never the linker aura.macho, and the confined Stage 2; others stage neither; an older kernel or over 16 MiB is refused"
 
 # Base runtime requests must resolve to the same reviewed stack as Apple requests.
 (
