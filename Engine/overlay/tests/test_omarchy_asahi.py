@@ -1859,6 +1859,8 @@ class EncryptedRecoveryFirmwareTests(unittest.TestCase):
             def collect_firmware(self, pkg):
                 fake_stub.subprocess.run(["hdiutil", "attach", "-quiet", "-readonly",
                                           "-mountpoint", "recovery", str(test.image)], check=True)
+                if getattr(test, "failing", False):
+                    raise OSError(1, "Operation not permitted")
                 fake_stub.subprocess.run(["tar", "czf", "all_firmware.tar.gz"], check=True)
                 fake_stub.subprocess.run(["hdiutil", "detach", "-quiet", "recovery"])
                 return pkg
@@ -1897,6 +1899,28 @@ class EncryptedRecoveryFirmwareTests(unittest.TestCase):
         ])
         # The stub's own image is untouched; install_files replaces it.
         self.assertEqual(self.image.read_bytes()[:4], b"AEA1")
+
+    def test_a_failed_collection_detaches_the_recovery_ramdisk(self):
+        # Run 1 on a J616s left its ramdisk attached, so run 2's attach failed.
+        self.failing = True
+        installer = self.make(b"koly" + b"\0" * 60)
+        mountpoint = os.path.abspath("recovery")
+        detaches = []
+        with patch("omarchy_asahi.os.path.ismount", lambda path: path == mountpoint), \
+                patch("omarchy_asahi.subprocess.run",
+                      lambda command, **kwargs: detaches.append(command) or subprocess.CompletedProcess(command, 0)):
+            with self.assertRaisesRegex(OSError, "Operation not permitted"):
+                self.collect(installer)
+        self.assertEqual(detaches, [["hdiutil", "detach", "-quiet", mountpoint]])
+
+    def test_a_successful_collection_leaves_detaching_to_the_stub(self):
+        installer = self.make(b"koly" + b"\0" * 60)
+        detaches = []
+        with patch("omarchy_asahi.os.path.ismount", lambda path: True), \
+                patch("omarchy_asahi.subprocess.run",
+                      lambda command, **kwargs: detaches.append(command) or subprocess.CompletedProcess(command, 0)):
+            self.assertEqual(self.collect(installer), "pkg")
+        self.assertEqual(detaches, [])
 
     def test_an_image_that_will_not_decrypt_is_refused(self):
         self.decrypt = FakeDecrypt({})
@@ -2587,6 +2611,62 @@ class NeoTouchIdCalibrationTests(unittest.TestCase):
         partitions = [{"Content": "Apple_APFS", "DeviceIdentifier": "disk0s1"}]
         with self.assertRaisesRegex(AsahiAdapterError, "does not start"):
             self.run_hook("j700ap", lambda device: self.fail("read"), partitions)
+
+
+class InstalledMacosWiFiTests(unittest.TestCase):
+    """collect_firmware takes Wi-Fi through omarchy_wifi (aurora-installer 34f90a5)."""
+
+    def collect(self, device_class, firmware, error=None):
+        root = tempfile.TemporaryDirectory()
+        self.addCleanup(root.cleanup)
+        image = Path(root.name, "VG", "usr/standalone/firmware/arm64eBaseSystem.dmg")
+        image.parent.mkdir(parents=True)
+        image.write_bytes(b"plain recovery image")
+        calls = []
+
+        class Stub:
+            def __init__(self, *args):
+                self.osi = SimpleNamespace(vgid="VG", recovery=root.name)
+                self.sysinfo = SimpleNamespace(device_class=device_class)
+
+            def load_identity(self):
+                pass
+
+            def install_files(self, cur_os):
+                pass
+
+            def collect_firmware(self, pkg):
+                calls.append(("collect", pkg))
+
+        def require():
+            calls.append(("require",))
+            if error is not None:
+                raise error
+
+        @contextmanager
+        def collectors(stub, upstream, machine):
+            calls.append(("collectors", stub is fake_stub, upstream, machine))
+            yield SimpleNamespace(require=require)
+
+        fake_stub = SimpleNamespace(StubInstaller=Stub, WiFiFWCollection=object, BluetoothFWCollection=object,
+                                    subprocess=subprocess)
+        with patch("omarchy_asahi.stub", fake_stub), patch("omarchy_asahi.asahi_firmware", firmware), \
+                patch("omarchy_asahi.omarchy_wifi.collectors", collectors):
+            stub_installer("sysinfo", "dutil", "osinfo").collect_firmware("pkg")
+        return calls
+
+    def test_collection_runs_inside_the_wifi_collectors_then_requires_radios(self):
+        calls = self.collect("j614sap", SimpleNamespace(wifi="upstream wifi"))
+        self.assertEqual(calls, [("collectors", True, "upstream wifi", "j614s"), ("collect", "pkg"), ("require",)])
+
+    def test_a_package_without_radios_stops_the_install(self):
+        import omarchy_wifi
+
+        with self.assertRaisesRegex(AsahiAdapterError, "Wi-Fi firmware collection failed: j616s: lacks"):
+            self.collect("j616sap", SimpleNamespace(wifi="upstream wifi"), omarchy_wifi.WiFiError("j616s: lacks"))
+
+    def test_without_upstream_wifi_nothing_is_rebound(self):
+        self.assertEqual(self.collect("j314sap", SimpleNamespace()), [("collect", "pkg")])
 
 
 if __name__ == "__main__":
