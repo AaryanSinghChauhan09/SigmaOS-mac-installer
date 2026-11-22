@@ -7,7 +7,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import omarchy_macho as macho  # noqa: E402
-from macho_fixture import BASE, PAGE, macho_stage1  # noqa: E402
+from macho_fixture import BASE, PAGE, macho_stage1, segment, thread  # noqa: E402
 
 RAW = b"aura stage 1" + b"\0" * 64
 
@@ -58,6 +58,21 @@ class ExecuteWindowTests(unittest.TestCase):
         for message, image in cases.items():
             with self.subTest(message), self.assertRaisesRegex(macho.MachOError, message):
                 macho.check_execute_window(image)
+
+    def test_a_text_exec_ending_past_the_address_space_is_refused(self):
+        # Recovery's checked sum throws where __TEXT_EXEC's end reaches 2^64.
+        base, size = 0xFFFFFFFFFFFF0000, 0xC000
+        layout = [("__TEXT", base, PAGE, 0, PAGE), ("__TEXT_EXEC", base + PAGE, size, PAGE, size),
+                  ("__PRELINK_INFO", base, 0, 0, 0), ("__LINKEDIT", base, 0, 0, 0)]
+        commands = b"".join(segment(*entry) for entry in layout) + thread(base + PAGE + 0x800)
+        header = struct.pack("<IIIIIIII", 0xFEEDFACF, 0x0100000C, 0, 12, len(layout) + 1, len(commands), 0, 0)
+        data = bytearray(PAGE + size)
+        data[:len(header) + len(commands)] = header + commands
+        data[PAGE:PAGE + len(RAW)] = RAW
+        data[PAGE + 0x808:PAGE + 0x820] = b"AURALOAD" + bytes(8) + struct.pack("<Q", 2 * PAGE)
+        macho.layout(bytes(data))
+        with self.assertRaisesRegex(macho.MachOError, "an address or offset is out of range"):
+            macho.check_execute_window(bytes(data))
 
     def test_an_empty_symbol_table_is_allowed(self):
         macho.check_execute_window(macho_stage1(RAW, commands_extra=struct.pack("<II", 0x2, 24) + bytes(16)))

@@ -141,7 +141,7 @@
     }
   },
   "downstream_overlay": {
-    "version": "v0.9.2-omarchy.20261121.d4d5be33313c",
+    "version": "v0.9.2-omarchy.20261122.42388cee2812",
     "capability": "candidate_bound_full_os_stage_one_authenticated_recovery",
     "minimum_app_version": "2.3.0",
     "engine_modes": [
@@ -172,7 +172,7 @@
       {
         "path": "overlay/src/omarchy_asahi.py",
         "destination": "src/omarchy_asahi.py",
-        "sha256": "23d3bd764323a354326261082f3759c9fc056b1abd27aab5004a1a3a234f8c87"
+        "sha256": "cf3b19d6e6908831a11cdcf96623bfee86cd02c08338ca3ac3880f6a751cb23c"
       },
       {
         "path": "overlay/src/omarchy_contract.py",
@@ -207,7 +207,7 @@
       {
         "path": "overlay/tests/test_omarchy_asahi.py",
         "destination": "tests/test_omarchy_asahi.py",
-        "sha256": "49926a57b8d7424f2b0ff258def3b5726c83a9d83fb1b06ee0d82481b5aa91d2"
+        "sha256": "1e4377757806103c4055093caaeb606b2697ac58f5f74ba9028f0d66aedc7e71"
       },
       {
         "path": "overlay/tests/test_omarchy_contract.py",
@@ -305,6 +305,11 @@
         "sha256": "bbb156702c3a9dd61c4069871d130de48f8e6ad506a6c682197c3e809b9d97ce"
       },
       {
+        "path": "overlay/src/omarchy_wifi.py",
+        "destination": "src/omarchy_wifi.py",
+        "sha256": "de037011c876bbf52270c659fb87fb52ed67c50617779c9e16e4714024430d74"
+      },
+      {
         "path": "overlay/src/omarchy_recovery.py",
         "destination": "src/omarchy_recovery.py",
         "sha256": "7d46919aac0b6f85730bbc2be2dc53a98eed07557205e353314ec1e6e89b10bc"
@@ -330,6 +335,11 @@
         "sha256": "9458c0dc1b5218b38601bd1bde1177b9de6c56096c1ba53cb47b92662f75be60"
       },
       {
+        "path": "overlay/tests/test_omarchy_wifi.py",
+        "destination": "tests/test_omarchy_wifi.py",
+        "sha256": "3af21fcf0d14e98a3d6e67c7ce16297cff096f0dbc4214e37e410e9e592d7c41"
+      },
+      {
         "path": "overlay/tests/test_omarchy_recovery.py",
         "destination": "tests/test_omarchy_recovery.py",
         "sha256": "a4a828533b83aa093db1bb30e8eeb334a4562882ecf3b0c956ec5545680cc764"
@@ -347,12 +357,12 @@
       {
         "path": "overlay/src/omarchy_macho.py",
         "destination": "src/omarchy_macho.py",
-        "sha256": "c0f8a526b977db53c37372e20c639b89d68ccbb3c89dfbf002807025a855e589"
+        "sha256": "84971a42de233d49cff353d932aaa013afd63861bd3d3a5bfb5ff2682af21a2c"
       },
       {
         "path": "overlay/tests/test_omarchy_macho.py",
         "destination": "tests/test_omarchy_macho.py",
-        "sha256": "025dd5bea99276292238163d2c9d0981c4a7295ab475898601ba80c6f3685ed5"
+        "sha256": "c30a59a97297e70887a5041e50de6923437a349f19315cf57e07478bcf31d317"
       },
       {
         "path": "overlay/tests/macho_fixture.py",
@@ -492,9 +502,9 @@
     }
   ],
   "validation_artifact": {
-    "filename": "installer-v0.9.2-omarchy.20261121.d4d5be33313c.tar.gz",
-    "size_bytes": 17910047,
-    "sha256": "19ea3a03c3a23883df3f91ef0f656a2e701f0498d0bf6488fc64177985bc1c93",
+    "filename": "installer-v0.9.2-omarchy.20261122.42388cee2812.tar.gz",
+    "size_bytes": 17915981,
+    "sha256": "4c4439e057fe7f2cbc953e00040c6024722251f3c33ff3eeece9148b6680e294",
     "reproducibility_scope": "two-identical-python-overlay-repacks-authenticated-base",
     "signature": "absent",
     "metadata_sha256": "2e6181ce6b6e17c11039e04bfadade8d10ae0e11889885ad8c9960b68f179a5d"

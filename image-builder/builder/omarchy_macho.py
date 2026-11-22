@@ -137,6 +137,8 @@ def check_execute_window(data, window=EXECUTE_WINDOW, slot=AURA_SLOT):
     growth = slot + (WINDOW_ALIGNMENT - PAGE) + window - code.vmsize
     code_end = code.vmaddr + code.vmsize
     file_end = code.fileoff + code.filesize
+    if code_end > 0xFFFFFFFFFFFFFFFF or file_end > 0xFFFFFFFFFFFFFFFF:
+        raise MachOError("an address or offset is out of range")
     if file_end % PAGE or code.vmaddr % PAGE:
         raise MachOError("__TEXT_EXEC is not page-aligned")
 

@@ -34,6 +34,7 @@ import omarchy_isp
 import omarchy_macho
 import omarchy_recovery
 import omarchy_planner
+import omarchy_wifi
 from omarchy_image import (
     WRITE_VERIFICATION, flush_device, hash_target, open_target, timing, write_image,
 )
@@ -764,6 +765,20 @@ def _neo_peripheral_collectors(installer):
             stub.AlsFWCollection, stub.ISPFWCollection, stub.subprocess = old_als, old_isp, old_process
 
 
+@contextlib.contextmanager
+def _installed_macos_wifi(installer):
+    """Collect BCM4388 rev C2 Wi-Fi, from the installed macOS when Recovery
+    lacks this Mac's board (omarchy_wifi)."""
+    upstream = getattr(asahi_firmware, "wifi", None)
+    if upstream is None or not hasattr(stub, "WiFiFWCollection"):
+        yield None
+        return
+    device = getattr(getattr(installer, "sysinfo", None), "device_class", "")
+    machine = device[:-2] if device.endswith("ap") else device
+    with omarchy_wifi.collectors(stub, upstream, machine) as radios:
+        yield radios
+
+
 def stub_installer(sysinfo, dutil, osinfo):
     """A StubInstaller that reads macOS 26 firmware's bootcaches.plist and
     writes Omarchy's own step2.sh as its Recovery setup."""
@@ -782,8 +797,14 @@ def stub_installer(sysinfo, dutil, osinfo):
     collect_firmware = installer.collect_firmware
 
     def collect_firmware_from_an_encrypted_recovery(pkg):
-        with _newer_trackpad_keys(), _neo_peripheral_collectors(installer):
+        with _newer_trackpad_keys(), _neo_peripheral_collectors(installer), \
+                _installed_macos_wifi(installer) as radios:
             result = _collect_firmware(pkg)
+            if radios is not None:
+                try:
+                    radios.require()
+                except omarchy_wifi.WiFiError as error:
+                    raise AsahiAdapterError(f"Wi-Fi firmware collection failed: {error}") from error
         required = getattr(installer, "required_neo_peripherals", [])
         _collect_neo_radios(installer, pkg, required="radio" in required)
         _collect_neo_touch_id(installer, pkg, required="touch-id" in required)
@@ -792,6 +813,13 @@ def stub_installer(sysinfo, dutil, osinfo):
         return result
 
     def _collect_firmware(pkg):
+        try:
+            return _collect_firmware_once(pkg)
+        except BaseException:
+            _detach_recovery_ramdisk()
+            raise
+
+    def _collect_firmware_once(pkg):
         image = os.path.join(
             installer.osi.recovery,
             installer.osi.vgid,
@@ -822,6 +850,24 @@ def stub_installer(sysinfo, dutil, osinfo):
 
     installer.install_files = install_files_with_decrypted_images_and_omarchys_step2
     return installer
+
+
+def _detach_recovery_ramdisk(mountpoint="recovery"):
+    """Detach the ramdisk stub's collect_firmware attached at its relative
+    "recovery" mountpoint, which it detaches only when the collection
+    succeeds. A ramdisk left attached makes the next attach of the same image
+    fail. Only this run's own mountpoint, in the engine's working directory, is
+    touched, and a detach that fails never hides the collection's error."""
+    path = os.path.abspath(mountpoint)
+    if not os.path.ismount(path):
+        return
+    for command in (["hdiutil", "detach", "-quiet", path], ["hdiutil", "detach", "-quiet", "-force", path]):
+        try:
+            if subprocess.run(command, check=False).returncode == 0:
+                return
+        except OSError:
+            return
+    logging.warning(f"could not detach the recovery ramdisk at {path}")
 
 
 def _validate_neo_firmware_package(pkg):
