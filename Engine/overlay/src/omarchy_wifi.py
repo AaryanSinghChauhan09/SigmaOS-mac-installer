@@ -14,9 +14,12 @@ its sealed, read-only system volume.
 So the collection converts C2 like any other directory and skips a dangling
 alias by itself instead of the directory around it. The stub collects Wi-Fi
 from the running system's /usr/share/firmware/wifi when that tree carries this
-Mac's board (the ADT wlan node's module-instance), and from Recovery
-otherwise. The fallback archive then keeps the tree the package came from, so
-a re-extraction on Linux gives the same set.
+Mac's board (the ADT wlan node's module-instance) and Recovery can't serve it:
+the board's files sit in the directory upstream skips, or Recovery has no
+firmware for it. Otherwise, as on M1 to M3, it collects Recovery's set as
+before; upstream takes the installed system's there too. The fallback archive
+then keeps the tree the package came from, so a re-extraction on Linux gives
+the same set.
 
 The refusal is keyed on what the Mac presents. When the ADT has a Broadcom
 wlan board and that board's files sit in the directory upstream skips, in
@@ -199,11 +202,17 @@ def board_chips(outputs, board):
     return {match.group(1) for match in map(pattern.match, outputs) if match}
 
 
-def wifi_source(board, system):
-    """Prefer the installed system, and use Recovery only when it alone has
-    this board's firmware or the board is unknown."""
+def wifi_source(board, system, recovery=None):
+    """The installed system when it carries this board and Recovery can't
+    serve it: the board sits in the directory upstream skips, or Recovery has
+    no firmware for it. Recovery otherwise, and when the board is unknown.
+    Without Recovery's set, the installed system whenever it carries the
+    board."""
     if not board or system is None or not carries_wifi(system, board):
         return "recovery"
+    if recovery is not None and carries_wifi(recovery, board):
+        if SKIPPED_CHIP not in board_chips(system, board) | board_chips(recovery, board):
+            return "recovery"
     return "system"
 
 
@@ -382,7 +391,7 @@ def collectors(stub, upstream, machine, read_board=board, system_path=SYSTEM_WIF
                 log.warning(f"Installed macOS Wi-Fi firmware unreadable: {error}")
         if system is not None:
             radios.sources.append(converted(system))
-            if wifi_source(radios.board, radios.sources[-1]) == "system":
+            if wifi_source(radios.board, radios.sources[-1], radios.wifi) == "system":
                 log.info(f"Collecting Wi-Fi for board {radios.board} from the installed macOS")
                 radios.wifi, radios.system = radios.sources[-1], tree
                 return system

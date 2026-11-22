@@ -258,6 +258,18 @@ class SourceTests(unittest.TestCase):
         self.assertEqual(wifi.wifi_source("mriya", None), "recovery")
         self.assertEqual(wifi.wifi_source("mriya", {"brcm/brcmfmac4388c2-pcie.apple,mriya.bin": b""}), "recovery")
         self.assertTrue(wifi.carries_wifi({"brcm/brcmfmac4388c2-pcie.apple,mriya-X0.bin": b"x"}, "mriya"))
+
+    def test_recovery_keeps_a_board_it_serves_outside_the_c2_directory(self):
+        # M1 to M3: the installed system carries every board, Recovery too.
+        system = {"brcm/brcmfmac4387c3-pcie.apple,kanaha.bin": b"newer"}
+        recovery = {"brcm/brcmfmac4387c3-pcie.apple,kanaha.bin": b"recovery"}
+        self.assertEqual(wifi.wifi_source("kanaha", system, recovery), "recovery")
+        self.assertEqual(wifi.wifi_source("kanaha", system, {}), "system")
+        self.assertEqual(wifi.wifi_source("kanaha", system, {"brcm/brcmfmac4387c3-pcie.apple,kanaha.bin": b""}), "system")
+        # A C2 board takes the installed system's set even beside Recovery's.
+        c2 = {"brcm/brcmfmac4388c2-pcie.apple,mriya.bin": FIRMWARE}
+        self.assertEqual(wifi.wifi_source("mriya", c2, {"brcm/brcmfmac4388c2-pcie.apple,mriya.bin": b"partial"}), "system")
+        self.assertEqual(wifi.wifi_source("mriya", c2, {"brcm/brcmfmac4388c2-pcie.apple,mriya.txt": b"x=1\n"}), "system")
         self.assertFalse(wifi.carries_wifi({"brcm/brcmfmac4388c2-pcie.apple,mriyax.bin": b"x"}, "mriya"))
 
     def test_a_writable_tree_is_not_the_installed_system(self):
@@ -505,6 +517,21 @@ class CollectorTests(unittest.TestCase):
                 radios.require()
             self.assertIsNone(radios.system)
             self.assertEqual(files["brcm/brcmfmac4387c3-pcie.apple,kanaha.bin"].data, b"c3 firmware")
+
+    def test_an_m1_to_m3_board_keeps_recoverys_set_beside_the_installed_systems(self):
+        # A real installed macOS carries every board, the M1-to-M3 ones too.
+        c3 = self.system / "C-4387__s-C3"
+        c3.mkdir()
+        (c3 / "kanaha.trx").write_bytes(b"installed c3 firmware")
+        (c3 / "kanaha.clmb").write_bytes(b"installed c3 clm")
+        (c3 / "P-kanaha_M-RASP_V-m__m-7.9.txt").write_bytes(b"x=2\n")
+        self.bt_board = "hostomel"
+        with self.collecting("j314s", board="kanaha") as radios:
+            files = self.stub_collects()
+            radios.require()
+        self.assertIsNone(radios.system)
+        self.assertEqual(files["brcm/brcmfmac4387c3-pcie.apple,kanaha.bin"].data, b"c3 firmware")
+        self.assertEqual(self.after, ["-C", "../../usr/sbin"])
 
     def test_no_broadcom_board_keeps_recovery_without_the_system_tree(self):
         # The MacBook Neo's ADT has no Broadcom wlan board: read_board gives
