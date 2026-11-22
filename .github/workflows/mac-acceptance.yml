@@ -272,6 +272,9 @@ jobs:
           OMARCHY_VM_RUN_ID: ${{ env.VM_RUN_ID }}
           OMARCHY_VM_IMAGE_STATE_DIR: ${{ env.ROOT }}/state
           OMARCHY_VM_EVIDENCE_DIR: ${{ env.ROOT }}/evidence
+          # Empty keeps the harness's archive URL; set the repository variable to a
+          # mirror while archive.archlinux.org is down. The digest stays pinned.
+          OMARCHY_VM_UEFI_URL: ${{ vars.OMARCHY_VM_UEFI_URL }}
         run: |
           # The bash shell runs with -e; this step must reach its end.
           set +e -uo pipefail
