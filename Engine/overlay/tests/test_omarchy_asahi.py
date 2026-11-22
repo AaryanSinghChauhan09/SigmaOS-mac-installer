@@ -114,6 +114,8 @@ sys.path.insert(
     str(Path(__file__).resolve().parents[1] / "src"),
 )
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from macho_fixture import macho_stage1  # noqa: E402
 import omarchy_apple_aea  # noqa: E402
 from omarchy_asahi import (  # noqa: E402
     _collect_neo_radios,
@@ -123,8 +125,11 @@ from omarchy_asahi import (  # noqa: E402
     AsahiInPlaceRepairAdapter,
     AsahiStage1Adapter,
     OmarchyOSInstaller,
+    MAX_CONFINED_STAGE2_BYTES,
+    confined_stage1,
     esp_board_layout,
     fill_aurora_stage1,
+    fill_macho_stage1,
     install_board_stage1,
     install_esp_board_layout,
     stub_installer,
@@ -263,6 +268,7 @@ class AsahiStage1AdapterTests(unittest.TestCase):
             "manifest_path": adapter.recovery_manifest,
             "requirement": adapter.recovery_requirement, "authorized_owner": "mina",
             "expected_bootstrap": {"ownerUUIDs": ["original owner"]},
+            "boot_mode": "raw",
         })
 
     def test_image_native_template_wins_over_installer_template(self):
@@ -1133,6 +1139,161 @@ class AsahiStage1AdapterTests(unittest.TestCase):
             encoding="utf-8",
         )
         self.metadata.chmod(0o400)
+
+
+    # M4 and later: Stage 1 and Stage 2 by chip (omarchy_chip), not by board.
+
+    def _m4_payload(self, *, stage1=True, shared=b"m1n1 ctxr", own=None):
+        with zipfile.ZipFile(self.payload, "a") as archive:
+            if stage1:
+                archive.writestr("esp/aurora/stage1.macho", macho_stage1(j700_stage1()))
+            if shared is not None:
+                archive.writestr("esp/m1n1/boot-ctxr.bin", shared)
+            if own is not None:
+                archive.writestr("esp/m1n1/boot-ctxr-j713.bin", own)
+        # As extract_tree leaves the ESP: every payload member under its own name.
+        (self.installed_esp / "aurora").mkdir(exist_ok=True)
+        if stage1:
+            (self.installed_esp / "aurora/stage1.macho").write_bytes(macho_stage1(j700_stage1()))
+        if shared is not None:
+            (self.installed_esp / "m1n1/boot-ctxr.bin").write_bytes(shared)
+        if own is not None:
+            (self.installed_esp / "m1n1/boot-ctxr-j713.bin").write_bytes(own)
+
+    def _native_recovery_metadata(self):
+        metadata = self._target_metadata()
+        metadata["recovery_gui"] = "omarchy-native-v1"
+        self._write_metadata([metadata])
+
+    def _on_chip(self, device_class, chip_id):
+        installer = FakeInstaller(FakeDiskUtil([[self.free]]))
+        installer.sysinfo.device_class = device_class
+        installer.sysinfo.chip_id = chip_id
+        return installer, self._adapter(installer)
+
+    def _install_m4(self, device_class="j713ap", chip_id=0x8132):
+        installer, adapter = self._on_chip(device_class, chip_id)
+        with patch("omarchy_asahi.omarchy_recovery.validate_payload"):
+            adapter.preflight(self.plan)
+        target = adapter.prepare_target(self.plan)
+        partition_disk = adapter.osins.partition_disk
+        def with_a_real_esp_uuid(name, size):
+            partition_disk(name, size)
+            adapter.osins.efi_part.uuid = "180190F8-0000-4000-8000-000000000000"
+        adapter.osins.partition_disk = with_a_real_esp_uuid
+        with patch("omarchy_asahi.omarchy_recovery.stage") as stage:
+            evidence = adapter.install_stub_and_esp(self.plan)
+        return installer, adapter, stage, target, evidence
+
+    def _esp_files(self):
+        return sorted(str(path.relative_to(self.installed_esp))
+                      for path in self.installed_esp.rglob("*") if path.is_file())
+
+    def test_an_m4_enrolls_the_filled_macho_stage1_that_loads_the_confined_stage2(self):
+        for device_class, chip_id in (("j713ap", 0x8132), ("j616sap", 0x6040), ("j616cap", 0x6041)):
+            with self.subTest(device_class):
+                self.setUp()
+                self._m4_payload()
+                self._native_recovery_metadata()
+                installer, adapter, stage, target, evidence = self._install_m4(device_class, chip_id)
+                boot_object = Path(installer.ins.boot_obj_path).read_bytes()
+                expected = fill_macho_stage1(
+                    macho_stage1(j700_stage1()), "180190f8-0000-4000-8000-000000000000", "m1n1/boot-ctxr.bin")
+                self.assertEqual(boot_object, expected)
+                self.assertEqual(stage.call_args.kwargs["boot_mode"], "macho")
+                self.assertEqual(self._esp_files(), ["EFI/BOOT/BOOTAA64.EFI", "m1n1/boot-ctxr.bin", "m1n1/boot.bin"])
+                self.assertEqual((self.installed_esp / "m1n1/boot-ctxr.bin").read_bytes(), b"m1n1 ctxr")
+                self.assertEqual((self.installed_esp / "m1n1/boot.bin").read_bytes(), b"m1n1")
+
+    def test_an_m4_takes_its_own_board_confined_stage2_when_the_payload_has_one(self):
+        self._m4_payload(own=b"m1n1 j713")
+        self._native_recovery_metadata()
+        self._install_m4()
+        self.assertEqual((self.installed_esp / "m1n1/boot-ctxr.bin").read_bytes(), b"m1n1 j713")
+        self.assertFalse((self.installed_esp / "m1n1/boot-ctxr-j713.bin").exists())
+
+    def test_an_m4_the_payload_cannot_boot_is_refused_before_disk_changes(self):
+        cases = {
+            "no esp/aurora/stage1.macho": dict(stage1=False),
+            "no esp/m1n1/boot-ctxr.bin": dict(shared=None),
+            "1 byte to 16 MiB": dict(shared=b""),
+        }
+        for message, payload in cases.items():
+            with self.subTest(message):
+                self.setUp()
+                self._m4_payload(**payload)
+                self._native_recovery_metadata()
+                installer, adapter = self._on_chip("j713ap", 0x8132)
+                with patch("omarchy_asahi.omarchy_recovery.validate_payload"), \
+                        self.assertRaisesRegex(AsahiAdapterError, message):
+                    adapter.preflight(self.plan)
+                self.assertFalse(adapter.preflight_complete)
+                self.assertEqual(installer.dutil.add_calls, [])
+
+    def test_a_confined_stage2_larger_than_aura_s_slot_is_refused(self):
+        self._m4_payload(shared=b"\0" * (MAX_CONFINED_STAGE2_BYTES + 1))
+        self._native_recovery_metadata()
+        installer, adapter = self._on_chip("j713ap", 0x8132)
+        with patch("omarchy_asahi.omarchy_recovery.validate_payload"), \
+                self.assertRaisesRegex(AsahiAdapterError, "16 MiB"):
+            adapter.preflight(self.plan)
+        self.assertEqual(installer.dutil.add_calls, [])
+
+    def test_a_macho_stage1_recovery_cannot_pad_is_refused_before_any_disk_change(self):
+        # expandExecuteWindow would refuse these after partitioning.
+        for name, image in (("an 0x804 entry", macho_stage1(j700_stage1(), entry_offset=0x804)),
+                            ("no AURALOAD", macho_stage1(j700_stage1(), load_header=None))):
+            with self.subTest(name):
+                self.setUp()
+                with zipfile.ZipFile(self.payload, "a") as archive:
+                    archive.writestr("esp/aurora/stage1.macho", image)
+                    archive.writestr("esp/m1n1/boot-ctxr.bin", b"m1n1 ctxr")
+                self._native_recovery_metadata()
+                installer, adapter = self._on_chip("j713ap", 0x8132)
+                with patch("omarchy_asahi.omarchy_recovery.validate_payload"), \
+                        self.assertRaisesRegex(AsahiAdapterError, "Mach-O Stage 1 is invalid"):
+                    adapter.preflight(self.plan)
+                self.assertEqual(installer.dutil.add_calls, [])
+
+    def test_a_raw_stage1_in_the_macho_slot_is_refused(self):
+        with zipfile.ZipFile(self.payload, "a") as archive:
+            archive.writestr("esp/aurora/stage1.macho", j700_stage1())
+            archive.writestr("esp/m1n1/boot-ctxr.bin", b"m1n1 ctxr")
+        self._native_recovery_metadata()
+        installer, adapter = self._on_chip("j713ap", 0x8132)
+        with patch("omarchy_asahi.omarchy_recovery.validate_payload"), \
+                self.assertRaisesRegex(AsahiAdapterError, "Mach-O Stage 1 is invalid"):
+            adapter.preflight(self.plan)
+
+    def test_an_m4_without_the_native_recovery_is_refused(self):
+        # step2.sh enrolls raw and cannot pad a Mach-O for the window.
+        self._m4_payload()
+        installer, adapter = self._on_chip("j713ap", 0x8132)
+        with self.assertRaisesRegex(AsahiAdapterError, "needs the native Recovery"):
+            adapter.preflight(self.plan)
+        self.assertEqual(installer.dutil.add_calls, [])
+
+    def test_m1_to_m3_never_receive_the_macho_stage1_or_the_confined_stage2(self):
+        for device_class, chip_id in (("j613ap", 0x8122), ("j314sap", 0x6000)):
+            with self.subTest(device_class):
+                self.setUp()
+                self._m4_payload(own=b"m1n1 j713")
+                self._native_recovery_metadata()
+                installer, adapter, stage, target, evidence = self._install_m4(device_class, chip_id)
+                self.assertEqual(stage.call_args.kwargs["boot_mode"], "raw")
+                self.assertEqual(Path(installer.ins.boot_obj_path).exists(), False)
+                self.assertEqual(self._esp_files(), ["EFI/BOOT/BOOTAA64.EFI", "m1n1/boot.bin"])
+
+    def test_the_neo_keeps_its_qualified_board_stage1_on_a_macho_payload(self):
+        self._neo_payload()
+        self._m4_payload()
+        self._native_recovery_metadata()
+        installer, adapter, stage, target, evidence = self._install_m4("j700ap", 0x8140)
+        boot_object = Path(installer.ins.boot_obj_path).read_bytes()
+        self.assertTrue(boot_object.startswith(b"m1n1 j700 stage 1"))
+        self.assertIn(b";m1n1/boot.bin", boot_object)
+        self.assertEqual(stage.call_args.kwargs["boot_mode"], "raw")
+        self.assertFalse((self.installed_esp / "m1n1/boot-ctxr.bin").exists())
 
 
 class AsahiInPlaceRepairAdapterTests(unittest.TestCase):
@@ -2176,6 +2337,33 @@ class BoardStage1Tests(unittest.TestCase):
             with self.assertRaisesRegex(AsahiAdapterError, "stage1-j700.bin"):
                 install_board_stage1("j700ap", "14.8.3", {}.__getitem__, self.UUID, str(target))
             self.assertEqual(target.read_bytes(), b"asahi stage 1")
+
+
+class MachOStage1Tests(unittest.TestCase):
+    UUID = "97c92d03-2cb3-461f-9134-134a58cc9fdc"
+
+    def test_the_block_inside_the_boot_object_is_filled_in_place(self):
+        image = macho_stage1(j700_stage1())
+        filled = fill_macho_stage1(image, self.UUID, "m1n1/boot-ctxr.bin")
+        self.assertEqual(len(filled), len(image))
+        raw = fill_aurora_stage1(j700_stage1(), self.UUID, "m1n1/boot-ctxr.bin", 0)
+        self.assertEqual(filled, image.replace(j700_stage1(), raw))
+
+    def test_a_raw_image_or_a_block_outside_text_exec_is_refused(self):
+        outside = macho_stage1(b"no block here")
+        outside = outside[:-len(j700_stage1())] + j700_stage1()
+        for image in (j700_stage1(), outside):
+            with self.assertRaises(AsahiAdapterError):
+                fill_macho_stage1(image, self.UUID, "m1n1/boot-ctxr.bin")
+
+    def test_the_choice_is_by_chip_not_board(self):
+        members = {"esp/aurora/stage1.macho", "esp/m1n1/boot-ctxr.bin"}
+        # A board no list names, on an M4-or-later chip, still gets it.
+        self.assertEqual(confined_stage1("j999ap", 0x8132, members).stage2_member, "esp/m1n1/boot-ctxr.bin")
+        self.assertEqual(confined_stage1("j775cap", 0x6050, members).member, "esp/aurora/stage1.macho")
+        for device_class, chip_id in (("j713ap", 0x8122), ("j713ap", None), ("j700ap", 0x8140)):
+            with self.subTest(device_class=device_class, chip_id=chip_id):
+                self.assertIsNone(confined_stage1(device_class, chip_id, members))
 
 
 class EspBoardLayoutTests(unittest.TestCase):

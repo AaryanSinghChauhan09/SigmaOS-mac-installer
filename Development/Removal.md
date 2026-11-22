@@ -17,8 +17,8 @@ partitions must be contiguous. Apple ISC must precede macOS and Apple Recovery
 must follow Omarchy. Gaps immediately before and after Omarchy are reclaimed too.
 
 Unknown partitions, multiple or partial installations, external boot, multiple
-APFS physical stores, mismatched names/types/UUIDs and explicitly unsupported
-`apple,j614s` are refused. This deliberately does not attempt general disk repair.
+APFS physical stores and mismatched names/types/UUIDs are refused. No Mac model
+is refused by name: removal recognises an installation by its own records. This deliberately does not attempt general disk repair.
 
 The group is confirmed as one installation by the ESP's `m1n1/boot.bin`,
 `asahi/stub_info.json` (naming the startup container's volume group) and
