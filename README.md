@@ -1,4 +1,6 @@
-# Omarchy Mac Installer
+# SigmaOS Mac Installer
+
+> Forked from [omacom/omarchy-mac-installer](https://github.com/omacom/omarchy-mac-installer) (MIT). See `SIGMAOS_FORK.md`.
 
 A macOS app that installs [Omarchy](https://github.com/omacom/omarchy) on an Apple Silicon Mac, next to macOS. The app is named **Omarchy Installer** and uses the `org.omarchy.installer` identifiers (`Packaging/identity.conf`). It was extracted from [maralcbr/omarchy-mx-mac](https://github.com/maralcbr/omarchy-mx-mac) into [omacom/omarchy-mac-installer](https://github.com/omacom/omarchy-mac-installer); the Git history and attribution are preserved (see [extraction provenance](docs/extraction.md)).
 
