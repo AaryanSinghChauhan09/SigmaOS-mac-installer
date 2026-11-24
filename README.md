@@ -1,12 +1,12 @@
 # SigmaOS Mac Installer
 
-> Forked from [omacom/omarchy-mac-installer](https://github.com/omacom/omarchy-mac-installer) (MIT). See `SIGMAOS_FORK.md`.
+> Forked from [AaryanSinghChauhan09/SigmaOS-mac-installer](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer) (MIT). See `SIGMAOS_FORK.md`.
 
-A macOS app that installs [Omarchy](https://github.com/omacom/omarchy) on an Apple Silicon Mac, next to macOS. The app is named **Omarchy Installer** and uses the `org.omarchy.installer` identifiers (`Packaging/identity.conf`). It was extracted from [maralcbr/omarchy-mx-mac](https://github.com/maralcbr/omarchy-mx-mac) into [omacom/omarchy-mac-installer](https://github.com/omacom/omarchy-mac-installer); the Git history and attribution are preserved (see [extraction provenance](docs/extraction.md)).
+A macOS app that installs [SigmaOS](https://github.com/AaryanSinghChauhan09/SigmaOS) on an Apple Silicon Mac, next to macOS. The app is named **SigmaOS Installer** and uses the `org.omarchy.installer` identifiers (`Packaging/identity.conf`). It was extracted from [maralcbr/omarchy-mx-mac](https://github.com/maralcbr/omarchy-mx-mac) into [AaryanSinghChauhan09/SigmaOS-mac-installer](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer); the Git history and attribution are preserved (see [extraction provenance](docs/extraction.md)).
 
-Status: every published installer release is a GitHub pre-release; the current notarized app is [Omarchy Installer 2.3.16](https://github.com/omacom/omarchy-mac-installer/releases/tag/v2.3.16); newer ones appear on the [releases page](https://github.com/omacom/omarchy-mac-installer/releases). Since installer 2.3.14 the app opens on the stable channel by default, which offers Omarchy 4.5. See [Release channels](#release-channels).
+Status: every published installer release is a GitHub pre-release; the current notarized app is [SigmaOS Installer 2.3.16](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/releases/tag/v2.3.16); newer ones appear on the [releases page](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/releases). Since installer 2.3.14 the app opens on the stable channel by default, which offers SigmaOS 4.5. See [Release channels](#release-channels).
 
-Installing Omarchy changes the partition layout of your Mac's internal disk and its boot policy. Read [Before you install](#before-you-install) first.
+Installing SigmaOS changes the partition layout of your Mac's internal disk and its boot policy. Read [Before you install](#before-you-install) first.
 
 ## Contents
 
@@ -33,7 +33,7 @@ Which Macs a release supports is decided by that release's signed catalog, not b
 - M3: iMac 24-inch, MacBook Pro 14/16-inch (M3, M3 Pro, M3 Max), MacBook Air 13/15-inch
 - MacBook Neo (`apple,j700`)
 
-The per-model names are in [`MacModelNames.swift`](Sources/OmarchyInstallerUXCore/MacModelNames.swift). A Mac whose identifier is not in the signed catalog gets the "This Mac isn't supported yet" screen and cannot be installed. A Mac can be inspected without changing anything: the app checks before it asks for a password.
+The per-model names are in [`MacModelNames.swift`](Sources/SigmaOSInstallerUXCore/MacModelNames.swift). A Mac whose identifier is not in the signed catalog gets the "This Mac isn't supported yet" screen and cannot be installed. A Mac can be inspected without changing anything: the app checks before it asks for a password.
 
 Not supported:
 
@@ -48,34 +48,34 @@ Why a catalog check exists: `make-unsigned-catalog.py` refuses inputs that miss,
 
 - **Back up macOS first.** The installer shrinks your macOS container and adds partitions. The install screen has a checkbox that you must tick ("I have a current backup and approve the disk layout/resize above") before Install unlocks. Local Time Machine snapshots are restore points on the startup disk and are not a backup.
 - **Disk space.** The app computes an allocation from your disk and shows a size you can edit in whole gigabytes. It recommends leaving macOS about 38 GB free and warns if the plan leaves less. Free space shown in macOS is not necessarily space the installer can release for a new partition; if it cannot, it says so and does not change the disk.
-- **Encryption.** The installed system encrypts its disk at first boot with the password you choose then. The installer text says: "Your first-boot password encrypts Omarchy. Keep it safe: there's no recovery key." The app records the encryption setting in `omarchy/install.conf` on the Omarchy EFI partition; if it cannot be saved, the app tells you Omarchy will encrypt at first boot. See [EFI encryption handoff](docs/efi-encryption-handoff.md).
+- **Encryption.** The installed system encrypts its disk at first boot with the password you choose then. The installer text says: "Your first-boot password encrypts SigmaOS. Keep it safe: there's no recovery key." The app records the encryption setting in `omarchy/install.conf` on the SigmaOS EFI partition; if it cannot be saved, the app tells you SigmaOS will encrypt at first boot. See [EFI encryption handoff](docs/efi-encryption-handoff.md).
 - **FileVault.** The app checks the FileVault state of macOS while inspecting the Mac.
 - **macOS and hardware.** The app requires macOS 15 or newer (`LSMinimumSystemVersion` 15.0). The MacBook Neo target is recorded as qualified only for firmware 26.6.2 (`Recovery/README.md`).
 - **Power and network.** Keep the Mac open and plugged in during installation (the app says so). The install downloads several gigabytes; the app resumes stalled downloads. It also needs HTTPS access to Apple's restore-image servers, see [Apple restore inputs](#apple-restore-inputs).
 - **Accounts.** You need a macOS administrator account and its password: the app sets up a privileged helper and authorizes the boot change with your password. Do not run an install while another installer or removal runs on the Mac.
-- **Shutdown and Recovery.** The last stage happens in macOS Recovery: you shut down, hold the power button until "Loading startup options" appears, choose Omarchy, click Continue and sign in with your macOS account. Plan for it before you start.
+- **Shutdown and Recovery.** The last stage happens in macOS Recovery: you shut down, hold the power button until "Loading startup options" appears, choose SigmaOS, click Continue and sign in with your macOS account. Plan for it before you start.
 
 ## Install
 
 The simplest way is [Homebrew](https://brew.sh):
 
 ```sh
-brew install omacom/mac/omarchy
+brew install SigmaOS/mac/omarchy
 ```
 
-This installs **Omarchy Installer** into `/Applications` and opens it; continue at step 4 below. Homebrew prints a deprecation warning about `postflight`, which is expected. The [omacom/homebrew-mac](https://github.com/omacom/homebrew-mac) tap picks up new installer releases automatically.
+This installs **SigmaOS Installer** into `/Applications` and opens it; continue at step 4 below. Homebrew prints a deprecation warning about `postflight`, which is expected. The [SigmaOS/homebrew-mac](https://github.com/SigmaOS/homebrew-mac) tap picks up new installer releases automatically.
 
 To install from the disk image instead:
 
-1. Download [`Omarchy-Mac-Installer-2.3.16.dmg`](https://github.com/omacom/omarchy-mac-installer/releases/download/v2.3.16/Omarchy-Mac-Installer-2.3.16.dmg) and [`Omarchy-Mac-Installer-2.3.16.dmg.sha256`](https://github.com/omacom/omarchy-mac-installer/releases/download/v2.3.16/Omarchy-Mac-Installer-2.3.16.dmg.sha256) from the [2.3.16 release](https://github.com/omacom/omarchy-mac-installer/releases/tag/v2.3.16). If a newer `Omarchy Installer <version>` release is on the [releases page](https://github.com/omacom/omarchy-mac-installer/releases), use that instead. Ignore the `catalog-*` and `engine-*` pre-releases: they hold data the app reads, not the app.
+1. Download [`SigmaOS-Mac-Installer-2.3.16.dmg`](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/releases/download/v2.3.16/SigmaOS-Mac-Installer-2.3.16.dmg) and [`SigmaOS-Mac-Installer-2.3.16.dmg.sha256`](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/releases/download/v2.3.16/SigmaOS-Mac-Installer-2.3.16.dmg.sha256) from the [2.3.16 release](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/releases/tag/v2.3.16). If a newer `SigmaOS Installer <version>` release is on the [releases page](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/releases), use that instead. Ignore the `catalog-*` and `engine-*` pre-releases: they hold data the app reads, not the app.
 2. Check the download. From the folder that holds both files:
 
    ```sh
-   shasum -a 256 -c Omarchy-Mac-Installer-2.3.16.dmg.sha256
+   shasum -a 256 -c SigmaOS-Mac-Installer-2.3.16.dmg.sha256
    ```
 
    Each release's notes also give the digest; for 2.3.16 it is `0b70717b0bfa3277f41159b5de4a0cab9f75dda9ba64f13d4b4a02a7860dd027`.
-3. Open the disk image and move **Omarchy Installer** to `/Applications`. The disk image holds the app and an `/Applications` link.
+3. Open the disk image and move **SigmaOS Installer** to `/Applications`. The disk image holds the app and an `/Applications` link.
 4. Open the app. It checks the Mac model, macOS version, power, FileVault and free disk space, then shows the plan. Choose the disk size, tick the backup box, click **Install**, and enter your macOS administrator account and password when asked. Allow the app to add its helper if macOS asks. The helper shows up under Login Items in System Settings.
 5. Keep the Mac awake and plugged in until the app says the first stage is done. Then follow the on-screen **Finish setup** steps in Recovery (see [What the installer does](#what-the-installer-does)).
 
@@ -85,15 +85,15 @@ The download is a plain app, not a command-line installer. There is no `curl | s
 
 ## Release channels
 
-The app can read one of three catalogs, all signed with the Omacom catalog key. Released apps fetch them from this repository's `catalog-<channel>` GitHub pre-releases, for example [`catalog-stable.signed.json`](https://github.com/omacom/omarchy-mac-installer/releases/download/catalog-stable/catalog-stable.signed.json): [`mac-app-release.yml`](.github/workflows/mac-app-release.yml) builds them with `APP_CATALOG_HOST: stopgap`. The installer dmg, engine and images the catalogs point to are served from `https://mac.omarchy.org/v1/`, but the catalogs themselves are not: `https://mac.omarchy.org/v1/catalog-<channel>.signed.json` returns 404. See [`docs/catalog-release.md`](docs/catalog-release.md).
+The app can read one of three catalogs, all signed with the Omacom catalog key. Released apps fetch them from this repository's `catalog-<channel>` GitHub pre-releases, for example [`catalog-stable.signed.json`](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/releases/download/catalog-stable/catalog-stable.signed.json): [`mac-app-release.yml`](.github/workflows/mac-app-release.yml) builds them with `APP_CATALOG_HOST: stopgap`. The installer dmg, engine and images the catalogs point to are served from `https://mac.omarchy.org/v1/`, but the catalogs themselves are not: `https://mac.omarchy.org/v1/catalog-<channel>.signed.json` returns 404. See [`docs/catalog-release.md`](docs/catalog-release.md).
 
 | Channel | Catalog | Use |
 | --- | --- | --- |
-| Stable | `catalog-stable.signed.json` | The default since installer 2.3.14 ([#169](https://github.com/omacom/omarchy-mac-installer/pull/169)). Offers Omarchy 4.5. |
-| Release candidate (rc) | `catalog-rc.signed.json` | Release candidates before they reach stable. Was the default in installer 2.3.13 ([#159](https://github.com/omacom/omarchy-mac-installer/pull/159)). |
+| Stable | `catalog-stable.signed.json` | The default since installer 2.3.14 ([#169](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/pull/169)). Offers SigmaOS 4.5. |
+| Release candidate (rc) | `catalog-rc.signed.json` | Release candidates before they reach stable. Was the default in installer 2.3.13 ([#159](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/pull/159)). |
 | Edge | `catalog-edge.signed.json` | Where the testing team qualifies new images and newly supported Macs on real hardware (see [Supported Macs](#supported-macs)). |
 
-The channels match Omarchy's. Dev is a developer choice made after installation, not an installer channel.
+The channels match SigmaOS's. Dev is a developer choice made after installation, not an installer channel.
 
 To switch channel, open the **Release channel** menu in the menu bar and pick one. Entries read "Couldn't load", "No Mac release yet", "Couldn't verify" or "Not available for this Mac" when that channel cannot be used right now; **Check Channels Again** re-reads them. The choice lives in memory only: every launch opens on the default (stable), and a choice never persists to another run. The menu locks once preparation, authorization or installation has started, so a plan made against one channel is never installed from another. The three catalog addresses are baked into the signed app; the menu cannot point at a source the app was not built to trust. Developer and private-test builds hide this menu.
 
@@ -101,12 +101,12 @@ To switch channel, open the **Release channel** menu in the menu bar and pick on
 
 The screens, in order, as the app words them (`PlainLanguage.swift`):
 
-1. **Check.** Inspects the Mac: model, macOS version, power, FileVault and free disk space. A Mac that is not in the signed catalog stops here ("This Mac isn't supported yet"). One that cannot be confirmed stops at "This Mac isn't ready yet". If Omarchy is already installed, the app says so and offers [removal](#update-remove-and-recover).
-2. **Plan.** Fetches and verifies the channel's signed catalog (Ed25519, trust root in `Release/trust-root.ed25519.pub`) and downloads the pinned engine and image, checking their sizes and SHA-256 digests before use. Shows the disk bar with macOS, free space and Omarchy, lets you change the Omarchy size, and holds **Install** until the download is verified and the backup box is ticked.
+1. **Check.** Inspects the Mac: model, macOS version, power, FileVault and free disk space. A Mac that is not in the signed catalog stops here ("This Mac isn't supported yet"). One that cannot be confirmed stops at "This Mac isn't ready yet". If SigmaOS is already installed, the app says so and offers [removal](#update-remove-and-recover).
+2. **Plan.** Fetches and verifies the channel's signed catalog (Ed25519, trust root in `Release/trust-root.ed25519.pub`) and downloads the pinned engine and image, checking their sizes and SHA-256 digests before use. Shows the disk bar with macOS, free space and SigmaOS, lets you change the SigmaOS size, and holds **Install** until the download is verified and the backup box is ticked.
 3. **Authorize.** Takes your macOS administrator account and password, installs the privileged helper and checks that the account is a macOS administrator. The password is not stored in the journal.
-4. **Install.** The helper runs the pinned Asahi-based engine, which goes through these recorded phases: checking the disk; removing a previous Omarchy installation if one exists; preparing disk space (shrinking the macOS APFS container); writing boot files (stub and EFI); preparing the final setup; authorizing startup; installing Omarchy. The app tails the engine journal for progress and verifies the result against the installation record when it finishes. Afterwards the helper writes the encryption choice to `omarchy/install.conf` on the EFI partition.
-5. **Finish setup (Recovery).** The app asks you to shut down, hold the power button until "Loading startup options" appears, choose Omarchy, click Continue and sign in with your macOS account. Omarchy's native Recovery app then asks for the owner password, installs and enrolls startup software, and shows **Installation complete!** with **Restart**. It can also create an optional recovery account (hold Shift on the finished screen, or Utilities → Create Recovery Account…); skipping it can be done later with **Installation → Set Up Recovery Password…** in the main app. See [`Recovery/README.md`](Recovery/README.md).
-6. **First boot of Omarchy.** Choose the Omarchy volume at startup (hold the power button when the Mac starts to pick macOS or Omarchy) and set the disk password. This repository does not cover what happens after that; see the [Mac packages](https://github.com/omacom/omarchy-mac-pkgs).
+4. **Install.** The helper runs the pinned Asahi-based engine, which goes through these recorded phases: checking the disk; removing a previous SigmaOS installation if one exists; preparing disk space (shrinking the macOS APFS container); writing boot files (stub and EFI); preparing the final setup; authorizing startup; installing SigmaOS. The app tails the engine journal for progress and verifies the result against the installation record when it finishes. Afterwards the helper writes the encryption choice to `omarchy/install.conf` on the EFI partition.
+5. **Finish setup (Recovery).** The app asks you to shut down, hold the power button until "Loading startup options" appears, choose SigmaOS, click Continue and sign in with your macOS account. SigmaOS's native Recovery app then asks for the owner password, installs and enrolls startup software, and shows **Installation complete!** with **Restart**. It can also create an optional recovery account (hold Shift on the finished screen, or Utilities → Create Recovery Account…); skipping it can be done later with **Installation → Set Up Recovery Password…** in the main app. See [`Recovery/README.md`](Recovery/README.md).
+6. **First boot of SigmaOS.** Choose the SigmaOS volume at startup (hold the power button when the Mac starts to pick macOS or SigmaOS) and set the disk password. This repository does not cover what happens after that; see the [Mac packages](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-pkgs).
 
 The helper is a root launchd daemon registered through `SMJobBless`; the app and helper check each other's code signature, and the helper authenticates every XPC client. The destructive steps are guarded by plans bound to a digest of the disk layout, so a plan made for one layout will not run on another.
 
@@ -114,20 +114,20 @@ The helper is a root launchd daemon registered through `SMJobBless`; the app and
 
 **Update the installer app.** If you installed with Homebrew, run `brew upgrade omarchy`. Otherwise download the newer dmg from the releases page and replace the app in `/Applications`. A catalog can set a minimum app version; an older app is told to update (the app has a **Download the installer** action).
 
-**Update Omarchy after installing.** This repository does not cover it. See [Omarchy's manual](https://omarchy.org/manual/) and the [Mac manual](https://github.com/omacom/omarchy-mac-pkgs/tree/main/mac-manual).
+**Update SigmaOS after installing.** This repository does not cover it. See [SigmaOS's manual](https://omarchy.org/manual/) and the [Mac manual](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-pkgs/tree/main/mac-manual).
 
-**Reinstall.** If Omarchy is already installed, the app detects it and removes the previous installation as the first phase of a new install. Use that only with a current backup.
+**Reinstall.** If SigmaOS is already installed, the app detects it and removes the previous installation as the first phase of a new install. Use that only with a current backup.
 
-**Remove Omarchy.** Choose **Installation → Remove Omarchy…** while no install or download runs. The app shows the space that returns to macOS and requires you to type the phrase `delete omarchy installation and data`, plus a macOS administrator account and password. Removal deletes the Omarchy partitions and grows the macOS container back over them. It refuses a layout it does not recognize (unknown or partial installations, external boot, more than one APFS store, mismatched names or UUIDs) rather than guess. If the layout shows only unallocated space right after macOS, it offers **Free space only** to return it. Details and interruption rules: [`Development/Removal.md`](Development/Removal.md). That document says physical removal had not been executed when it was written.
+**Remove SigmaOS.** Choose **Installation → Remove SigmaOS…** while no install or download runs. The app shows the space that returns to macOS and requires you to type the phrase `delete omarchy installation and data`, plus a macOS administrator account and password. Removal deletes the SigmaOS partitions and grows the macOS container back over them. It refuses a layout it does not recognize (unknown or partial installations, external boot, more than one APFS store, mismatched names or UUIDs) rather than guess. If the layout shows only unallocated space right after macOS, it offers **Free space only** to return it. Details and interruption rules: [`Development/Removal.md`](Development/Removal.md). That document says physical removal had not been executed when it was written.
 
-If you installed the app with Homebrew, `brew uninstall --zap omarchy` removes the app, its helper and its support files. It does not remove Omarchy from the disk: use **Remove Omarchy…** in the app first.
+If you installed the app with Homebrew, `brew uninstall --zap omarchy` removes the app, its helper and its support files. It does not remove SigmaOS from the disk: use **Remove SigmaOS…** in the app first.
 
-If a removal record is unfinished, the app will not install or remove again until it is resolved. Never delete or edit that record to get around the block: compare its partition UUIDs with the real layout first. A failed resize can leave all Omarchy partitions removed and the space unallocated. Do not repeat the deletion. The helper keeps its records in `/var/db/org.omarchy.installer`.
+If a removal record is unfinished, the app will not install or remove again until it is resolved. Never delete or edit that record to get around the block: compare its partition UUIDs with the real layout first. A failed resize can leave all SigmaOS partitions removed and the space unallocated. Do not repeat the deletion. The helper keeps its records in `/var/db/org.omarchy.installer`.
 
 **Recover a failed or interrupted install.**
 
 - If the engine refuses the plan before the resize starts, the app says "The disk has not been changed", and it has not. Use **Check available space** to make a new plan.
-- A resize that fails, stalls or is interrupted in "Preparing disk space" can leave the disk changed: the macOS container can be shrunk while its partition is not, and the app can then refuse to continue (`inconsistent macOS resize metrics`, or `AmbiguousMutationState: apfs_preparation_started has no completion checkpoint`). See [#196](https://github.com/omacom/omarchy-mac-installer/issues/196), [#199](https://github.com/omacom/omarchy-mac-installer/issues/199) and [#210](https://github.com/omacom/omarchy-mac-installer/issues/210). Don't force quit the app or kill `diskutil` while the step runs, even if it looks stuck. If it fails, don't retry yet: post `diskutil list internal` and `diskutil apfs list` in [#199](https://github.com/omacom/omarchy-mac-installer/issues/199); [#196](https://github.com/omacom/omarchy-mac-installer/issues/196) has a workaround that returned the space.
+- A resize that fails, stalls or is interrupted in "Preparing disk space" can leave the disk changed: the macOS container can be shrunk while its partition is not, and the app can then refuse to continue (`inconsistent macOS resize metrics`, or `AmbiguousMutationState: apfs_preparation_started has no completion checkpoint`). See [#196](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/issues/196), [#199](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/issues/199) and [#210](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/issues/210). Don't force quit the app or kill `diskutil` while the step runs, even if it looks stuck. If it fails, don't retry yet: post `diskutil list internal` and `diskutil apfs list` in [#199](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/issues/199); [#196](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/issues/196) has a workaround that returned the space.
 - If Apple's startup authorization step fails, use **Retry Recovery authorization**; the app first rechecks the plan, the installed files and the last completed step and cannot resize the disk or rewrite the system in the retry.
 - To start over, quit the app and reopen it, or use **Start over**. A simulation-only **Reset simulation** exists in debug builds.
 
@@ -137,7 +137,7 @@ Common messages and what they mean:
 
 - "This Mac isn't supported yet": the Mac's model is not in the release's catalog. See [Supported Macs](#supported-macs).
 - "Couldn't load" in the Release channel menu: no catalog is published for that channel, or the network failed. Choose **Check Channels Again**. "No Mac release yet" means a signed empty catalog is published.
-- "The encryption choice wasn't saved, so Omarchy will encrypt its disk at first boot": the installer could not write `omarchy/install.conf` to the EFI partition. Fixed for busy volumes in installer 2.3.12 ([#156](https://github.com/omacom/omarchy-mac-installer/pull/156)); see [EFI encryption handoff](docs/efi-encryption-handoff.md).
+- "The encryption choice wasn't saved, so SigmaOS will encrypt its disk at first boot": the installer could not write `omarchy/install.conf` to the EFI partition. Fixed for busy volumes in installer 2.3.12 ([#156](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/pull/156)); see [EFI encryption handoff](docs/efi-encryption-handoff.md).
 - "Not enough free space": the download needs more room than is available. Free space on macOS and run **Check available space**.
 - "An earlier removal didn't finish" or "The installer couldn't clear an earlier installation's record": see [Update, remove and recover](#update-remove-and-recover). Keep the records for support.
 - macOS asks about Login Items: the privileged helper appears under System Settings → General → Login Items.
@@ -145,11 +145,11 @@ Common messages and what they mean:
 Collecting information for a bug report:
 
 1. Note the installer version (it is in the dmg file name), the channel, `sw_vers`, and the Mac's model and chip. In Terminal, `sysctl hw.model hw.targettype` prints the model and the `apple,jNNN` board that the catalog uses.
-2. On an engine failure, choose **Copy error details** in the app. A copy is usually saved as `~/Library/Logs/Omarchy Installer/engine-failure-<time>.log`.
+2. On an engine failure, choose **Copy error details** in the app. A copy is usually saved as `~/Library/Logs/SigmaOS Installer/engine-failure-<time>.log`.
 3. In Recovery, open **Utilities → Show Details** to see the log (`Recovery/README.md`).
 4. Screenshot the error screen. Do not post your macOS password or recovery password anywhere, and check any file before you attach it.
 
-Open an issue at [omacom/omarchy-mac-installer issues](https://github.com/omacom/omarchy-mac-installer/issues) with those details.
+Open an issue at [AaryanSinghChauhan09/SigmaOS-mac-installer issues](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/issues) with those details.
 
 ## Contributing
 
@@ -190,7 +190,7 @@ There is no `CONTRIBUTING.md`; the conventions below come from `AGENTS.md` and `
 - Record validation against the exact commit with toolchain and host details. Linux results do not count for macOS requirements.
 - Get the owner's explicit authorization before helper registration, privileged execution, disk or boot-policy changes, production signing or notarization, publication, deployment or physical-device work.
 
-**Pin pull requests.** Publishing an app or engine release opens a pull request that moves the pins in `.github/mac-release-pipeline.json` (for example [#160](https://github.com/omacom/omarchy-mac-installer/pull/160)). Merge it after `mac-mirror.yml` has copied the release to the mirror. See [`docs/mac-release-pipeline.md`](docs/mac-release-pipeline.md).
+**Pin pull requests.** Publishing an app or engine release opens a pull request that moves the pins in `.github/mac-release-pipeline.json` (for example [#160](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/pull/160)). Merge it after `mac-mirror.yml` has copied the release to the mirror. See [`docs/mac-release-pipeline.md`](docs/mac-release-pipeline.md).
 
 The preserved release and cutover tools keep the original publisher's endpoints and signing identity and need review before operational use ([`docs/extraction.md`](docs/extraction.md)). Publishing, signing and physical installation need separate preparation and authorization.
 
@@ -205,22 +205,22 @@ Further reading:
 
 | Repository | Role |
 | --- | --- |
-| [omacom/omarchy](https://github.com/omacom/omarchy) | Omarchy itself, the desktop that gets installed |
-| [omacom/omarchy-mac-pkgs](https://github.com/omacom/omarchy-mac-pkgs) | The Apple Silicon add-on packages (`omarchy-mac`, `omarchy-mac-boot`), release tooling, and the Mac manual. Package changes go there |
-| [omacom/omarchy-pkgs](https://github.com/omacom/omarchy-pkgs) | Recipes that build and publish those packages to pkgs.omarchy.org |
-| [omacom/omarchy-mac](https://github.com/omacom/omarchy-mac) | The earlier Omarchy 4 fork for Macs, installed by script through Asahi Alarm. It remains for Macs that update from it. It is not this installer and takes no package changes |
+| [AaryanSinghChauhan09/SigmaOS](https://github.com/AaryanSinghChauhan09/SigmaOS) | SigmaOS itself, the desktop that gets installed |
+| [AaryanSinghChauhan09/SigmaOS-mac-pkgs](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-pkgs) | The Apple Silicon add-on packages (`omarchy-mac`, `omarchy-mac-boot`), release tooling, and the Mac manual. Package changes go there |
+| [AaryanSinghChauhan09/SigmaOS-pkgs](https://github.com/AaryanSinghChauhan09/SigmaOS-pkgs) | Recipes that build and publish those packages to pkgs.omarchy.org |
+| [AaryanSinghChauhan09/SigmaOS-mac](https://github.com/AaryanSinghChauhan09/SigmaOS-mac) | The earlier SigmaOS 4 fork for Macs, installed by script through Asahi Alarm. It remains for Macs that update from it. It is not this installer and takes no package changes |
 
-Questions and help: the community [Discord](https://discord.gg/KNQRk7dMzy) (the homepage of omacom/omarchy-mac). Bugs and feature requests: [issues on this repository](https://github.com/omacom/omarchy-mac-installer/issues); for a package or Linux-side problem, use the issues of [omarchy-mac-pkgs](https://github.com/omacom/omarchy-mac-pkgs/issues) or [omarchy](https://github.com/omacom/omarchy/issues).
+Questions and help: the community [Discord](https://discord.gg/KNQRk7dMzy) (the homepage of AaryanSinghChauhan09/SigmaOS-mac). Bugs and feature requests: [issues on this repository](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/issues); for a package or Linux-side problem, use the issues of [omarchy-mac-pkgs](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-pkgs/issues) or [omarchy](https://github.com/AaryanSinghChauhan09/SigmaOS/issues).
 
 ## Upgrading from a `com.omarchy.mx` preview
 
-Earlier preview and lab builds used `com.omarchy.mx.installer`. The new app has the same name, so it replaces the old one in `/Applications`, but it installs its own helper and never touches the old helper, state or a copy still named Omarchy MX Mac Installer: the old helper stays registered (and listed under Login Items in System Settings), and an install or removal record the old app left is not seen by the new one. Finish or clean up any interrupted install or removal with the old app before switching. The package removes a copy left under the old name, Omarchy MX Mac Installer, only when it already carries the new identifiers. To remove what the old app left:
+Earlier preview and lab builds used `com.omarchy.mx.installer`. The new app has the same name, so it replaces the old one in `/Applications`, but it installs its own helper and never touches the old helper, state or a copy still named SigmaOS MX Mac Installer: the old helper stays registered (and listed under Login Items in System Settings), and an install or removal record the old app left is not seen by the new one. Finish or clean up any interrupted install or removal with the old app before switching. The package removes a copy left under the old name, SigmaOS MX Mac Installer, only when it already carries the new identifiers. To remove what the old app left:
 
 ```sh
 sudo launchctl bootout system/com.omarchy.mx.installer.helper
 sudo rm -f /Library/LaunchDaemons/com.omarchy.mx.installer.helper.plist /Library/PrivilegedHelperTools/com.omarchy.mx.installer.helper
 sudo rm -rf /var/db/com.omarchy.mx.installer /var/db/com.omarchy.mx.installer.aside
-sudo rm -rf "/Applications/Omarchy MX Mac Installer.app"
+sudo rm -rf "/Applications/SigmaOS MX Mac Installer.app"
 rm -rf ~/Library/Application\ Support/com.omarchy.mx.installer* ~/Library/Caches/com.omarchy.mx.installer
 defaults delete com.omarchy.mx.installer 2>/dev/null
 ```
@@ -234,7 +234,7 @@ The Application Support line also frees any image the old app downloaded. A Mac 
 | `Sources/`, `Tests/`, `Package.swift` | Swift macOS app, trust core, helper, simulation and tests |
 | `Engine/` | Pinned Asahi source lock, Python overlay, build tooling and tests |
 | `Packaging/` | App and macOS package assembly |
-| [`Recovery/`](Recovery/README.md) | Omarchy Step 2 GUI, standalone macOS 13 target and app packaging |
+| [`Recovery/`](Recovery/README.md) | SigmaOS Step 2 GUI, standalone macOS 13 target and app packaging |
 | `Release/` | Release descriptor (channels, default channel) and public trust root; see [`Release/README.md`](Release/README.md) |
 | `scripts/` | Catalog and release tools, with fixture tests; `supported-models.json` |
 | `image-builder/` | Producer of the Apple Silicon Linux image |
