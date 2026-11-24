@@ -251,3 +251,8 @@ The helper is built from the [Swift source in this repository](Engine/RestoreIma
 ## License
 
 [MIT](LICENSE). The original MIT license, copyright notice and Git attribution are retained. External engine dependencies retain their own licenses; their exact revisions are recorded in `Engine/source-lock.json`. The restore-image helper is derived from an MIT implementation (see [Engine/RestoreImage/LICENSE](Engine/RestoreImage/LICENSE)).
+## Documentation
+
+Wiki documentation is available in the SigmaOS Wiki Staging repository:
+
+- [SigmaOS Wiki Staging](https://github.com/AaryanSinghChauhan09/sigmaos-wiki-staging#SigmaOS-mac-installer) - Full Wiki documentation for all SigmaOS components
