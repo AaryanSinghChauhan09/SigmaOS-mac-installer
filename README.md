@@ -2,7 +2,7 @@
 
 > Forked from [AaryanSinghChauhan09/SigmaOS-mac-installer](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer) (MIT). See `SIGMAOS_FORK.md`.
 
-A macOS app that installs [SigmaOS](https://github.com/AaryanSinghChauhan09/SigmaOS) on an Apple Silicon Mac, next to macOS. The app is named **SigmaOS Installer** and uses the `org.omarchy.installer` identifiers (`Packaging/identity.conf`). It was extracted from [maralcbr/omarchy-mx-mac](https://github.com/maralcbr/omarchy-mx-mac) into [AaryanSinghChauhan09/SigmaOS-mac-installer](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer); the Git history and attribution are preserved (see [extraction provenance](docs/extraction.md)).
+A macOS app that installs [SigmaOS](https://github.com/AaryanSinghChauhan09/SigmaOS) on an Apple Silicon Mac, next to macOS. The app is named **SigmaOS Installer** and uses the `org.sigmaos.installer` identifiers (`Packaging/identity.conf`). It was extracted from [maralcbr/sigmaos-mx-mac](https://github.com/maralcbr/sigmaos-mx-mac) into [AaryanSinghChauhan09/SigmaOS-mac-installer](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer); the Git history and attribution are preserved (see [extraction provenance](docs/extraction.md)).
 
 Status: every published installer release is a GitHub pre-release; the current notarized app is [SigmaOS Installer 2.3.16](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/releases/tag/v2.3.16); newer ones appear on the [releases page](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/releases). Since installer 2.3.14 the app opens on the stable channel by default, which offers SigmaOS 4.5. See [Release channels](#release-channels).
 
@@ -19,7 +19,7 @@ Installing SigmaOS changes the partition layout of your Mac's internal disk and 
 - [Troubleshooting and bug reports](#troubleshooting-and-bug-reports)
 - [Contributing](#contributing)
 - [Related repositories and where to ask](#related-repositories-and-where-to-ask)
-- [Upgrading from a `com.omarchy.mx` preview](#upgrading-from-a-comomarchymx-preview)
+- [Upgrading from a `com.sigmaos.mx` preview](#upgrading-from-a-comomarchymx-preview)
 - [Source layout](#source-layout)
 - [Apple restore inputs](#apple-restore-inputs)
 - [License](#license)
@@ -79,13 +79,13 @@ To install from the disk image instead:
 4. Open the app. It checks the Mac model, macOS version, power, FileVault and free disk space, then shows the plan. Choose the disk size, tick the backup box, click **Install**, and enter your macOS administrator account and password when asked. Allow the app to add its helper if macOS asks. The helper shows up under Login Items in System Settings.
 5. Keep the Mac awake and plugged in until the app says the first stage is done. Then follow the on-screen **Finish setup** steps in Recovery (see [What the installer does](#what-the-installer-does)).
 
-The release pipeline also copies the dmg and its `.sha256` to `https://mac.omarchy.org/v1/installer/<version>/`; the catalog's `downloadURL` points there ([`docs/catalog-release.md`](docs/catalog-release.md)).
+The release pipeline also copies the dmg and its `.sha256` to `https://mac.sigmaos.org/v1/installer/<version>/`; the catalog's `downloadURL` points there ([`docs/catalog-release.md`](docs/catalog-release.md)).
 
-The download is a plain app, not a command-line installer. There is no `curl | sh` path for this installer. For the older shell-based path used by the `omarchy-mac` fork, see [Related repositories](#related-repositories-and-where-to-ask).
+The download is a plain app, not a command-line installer. There is no `curl | sh` path for this installer. For the older shell-based path used by the `sigmaos-mac` fork, see [Related repositories](#related-repositories-and-where-to-ask).
 
 ## Release channels
 
-The app can read one of three catalogs, all signed with the Omacom catalog key. Released apps fetch them from this repository's `catalog-<channel>` GitHub pre-releases, for example [`catalog-stable.signed.json`](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/releases/download/catalog-stable/catalog-stable.signed.json): [`mac-app-release.yml`](.github/workflows/mac-app-release.yml) builds them with `APP_CATALOG_HOST: stopgap`. The installer dmg, engine and images the catalogs point to are served from `https://mac.omarchy.org/v1/`, but the catalogs themselves are not: `https://mac.omarchy.org/v1/catalog-<channel>.signed.json` returns 404. See [`docs/catalog-release.md`](docs/catalog-release.md).
+The app can read one of three catalogs, all signed with the Omacom catalog key. Released apps fetch them from this repository's `catalog-<channel>` GitHub pre-releases, for example [`catalog-stable.signed.json`](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/releases/download/catalog-stable/catalog-stable.signed.json): [`mac-app-release.yml`](.github/workflows/mac-app-release.yml) builds them with `APP_CATALOG_HOST: stopgap`. The installer dmg, engine and images the catalogs point to are served from `https://mac.sigmaos.org/v1/`, but the catalogs themselves are not: `https://mac.sigmaos.org/v1/catalog-<channel>.signed.json` returns 404. See [`docs/catalog-release.md`](docs/catalog-release.md).
 
 | Channel | Catalog | Use |
 | --- | --- | --- |
@@ -114,7 +114,7 @@ The helper is a root launchd daemon registered through `SMJobBless`; the app and
 
 **Update the installer app.** If you installed with Homebrew, run `brew upgrade omarchy`. Otherwise download the newer dmg from the releases page and replace the app in `/Applications`. A catalog can set a minimum app version; an older app is told to update (the app has a **Download the installer** action).
 
-**Update SigmaOS after installing.** This repository does not cover it. See [SigmaOS's manual](https://omarchy.org/manual/) and the [Mac manual](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-pkgs/tree/main/mac-manual).
+**Update SigmaOS after installing.** This repository does not cover it. See [SigmaOS's manual](https://sigmaos.org/manual/) and the [Mac manual](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-pkgs/tree/main/mac-manual).
 
 **Reinstall.** If SigmaOS is already installed, the app detects it and removes the previous installation as the first phase of a new install. Use that only with a current backup.
 
@@ -122,7 +122,7 @@ The helper is a root launchd daemon registered through `SMJobBless`; the app and
 
 If you installed the app with Homebrew, `brew uninstall --zap omarchy` removes the app, its helper and its support files. It does not remove SigmaOS from the disk: use **Remove SigmaOS…** in the app first.
 
-If a removal record is unfinished, the app will not install or remove again until it is resolved. Never delete or edit that record to get around the block: compare its partition UUIDs with the real layout first. A failed resize can leave all SigmaOS partitions removed and the space unallocated. Do not repeat the deletion. The helper keeps its records in `/var/db/org.omarchy.installer`.
+If a removal record is unfinished, the app will not install or remove again until it is resolved. Never delete or edit that record to get around the block: compare its partition UUIDs with the real layout first. A failed resize can leave all SigmaOS partitions removed and the space unallocated. Do not repeat the deletion. The helper keeps its records in `/var/db/org.sigmaos.installer`.
 
 **Recover a failed or interrupted install.**
 
@@ -206,26 +206,26 @@ Further reading:
 | Repository | Role |
 | --- | --- |
 | [AaryanSinghChauhan09/SigmaOS](https://github.com/AaryanSinghChauhan09/SigmaOS) | SigmaOS itself, the desktop that gets installed |
-| [AaryanSinghChauhan09/SigmaOS-mac-pkgs](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-pkgs) | The Apple Silicon add-on packages (`omarchy-mac`, `omarchy-mac-boot`), release tooling, and the Mac manual. Package changes go there |
-| [AaryanSinghChauhan09/SigmaOS-pkgs](https://github.com/AaryanSinghChauhan09/SigmaOS-pkgs) | Recipes that build and publish those packages to pkgs.omarchy.org |
+| [AaryanSinghChauhan09/SigmaOS-mac-pkgs](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-pkgs) | The Apple Silicon add-on packages (`sigmaos-mac`, `sigmaos-mac-boot`), release tooling, and the Mac manual. Package changes go there |
+| [AaryanSinghChauhan09/SigmaOS-pkgs](https://github.com/AaryanSinghChauhan09/SigmaOS-pkgs) | Recipes that build and publish those packages to pkgs.sigmaos.org |
 | [AaryanSinghChauhan09/SigmaOS-mac](https://github.com/AaryanSinghChauhan09/SigmaOS-mac) | The earlier SigmaOS 4 fork for Macs, installed by script through Asahi Alarm. It remains for Macs that update from it. It is not this installer and takes no package changes |
 
-Questions and help: the community [Discord](https://discord.gg/KNQRk7dMzy) (the homepage of AaryanSinghChauhan09/SigmaOS-mac). Bugs and feature requests: [issues on this repository](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/issues); for a package or Linux-side problem, use the issues of [omarchy-mac-pkgs](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-pkgs/issues) or [omarchy](https://github.com/AaryanSinghChauhan09/SigmaOS/issues).
+Questions and help: the community [Discord](https://discord.gg/KNQRk7dMzy) (the homepage of AaryanSinghChauhan09/SigmaOS-mac). Bugs and feature requests: [issues on this repository](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/issues); for a package or Linux-side problem, use the issues of [sigmaos-mac-pkgs](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-pkgs/issues) or [omarchy](https://github.com/AaryanSinghChauhan09/SigmaOS/issues).
 
-## Upgrading from a `com.omarchy.mx` preview
+## Upgrading from a `com.sigmaos.mx` preview
 
-Earlier preview and lab builds used `com.omarchy.mx.installer`. The new app has the same name, so it replaces the old one in `/Applications`, but it installs its own helper and never touches the old helper, state or a copy still named SigmaOS MX Mac Installer: the old helper stays registered (and listed under Login Items in System Settings), and an install or removal record the old app left is not seen by the new one. Finish or clean up any interrupted install or removal with the old app before switching. The package removes a copy left under the old name, SigmaOS MX Mac Installer, only when it already carries the new identifiers. To remove what the old app left:
+Earlier preview and lab builds used `com.sigmaos.mx.installer`. The new app has the same name, so it replaces the old one in `/Applications`, but it installs its own helper and never touches the old helper, state or a copy still named SigmaOS MX Mac Installer: the old helper stays registered (and listed under Login Items in System Settings), and an install or removal record the old app left is not seen by the new one. Finish or clean up any interrupted install or removal with the old app before switching. The package removes a copy left under the old name, SigmaOS MX Mac Installer, only when it already carries the new identifiers. To remove what the old app left:
 
 ```sh
-sudo launchctl bootout system/com.omarchy.mx.installer.helper
-sudo rm -f /Library/LaunchDaemons/com.omarchy.mx.installer.helper.plist /Library/PrivilegedHelperTools/com.omarchy.mx.installer.helper
-sudo rm -rf /var/db/com.omarchy.mx.installer /var/db/com.omarchy.mx.installer.aside
+sudo launchctl bootout system/com.sigmaos.mx.installer.helper
+sudo rm -f /Library/LaunchDaemons/com.sigmaos.mx.installer.helper.plist /Library/PrivilegedHelperTools/com.sigmaos.mx.installer.helper
+sudo rm -rf /var/db/com.sigmaos.mx.installer /var/db/com.sigmaos.mx.installer.aside
 sudo rm -rf "/Applications/SigmaOS MX Mac Installer.app"
-rm -rf ~/Library/Application\ Support/com.omarchy.mx.installer* ~/Library/Caches/com.omarchy.mx.installer
-defaults delete com.omarchy.mx.installer 2>/dev/null
+rm -rf ~/Library/Application\ Support/com.sigmaos.mx.installer* ~/Library/Caches/com.sigmaos.mx.installer
+defaults delete com.sigmaos.mx.installer 2>/dev/null
 ```
 
-The Application Support line also frees any image the old app downloaded. A Mac that ran the old installer package can also drop its receipt with `sudo pkgutil --forget com.omarchy.mx.installer.pkg`.
+The Application Support line also frees any image the old app downloaded. A Mac that ran the old installer package can also drop its receipt with `sudo pkgutil --forget com.sigmaos.mx.installer.pkg`.
 
 ## Source layout
 
@@ -246,7 +246,7 @@ The Application Support line also frees any image the old app downloaded. A Mac 
 
 Firmware preparation needs HTTPS access to Apple's restore-image CDN (`updates.cdn-apple.com`) and, for AEA-encrypted inputs, Apple's public release-key service (`wkms-public.apple.com` or `fcs-keys-pub-prod.cdn-apple.com`). An offline Linux image bundle does not remove that Apple-input dependency. The helper requests only the admitted FCS key URL from the archive metadata; it sends no installation credentials. Range extraction checks the recipe, response extent, ciphertext authentication and resulting file hashes before publishing any firmware.
 
-The helper is built from the [Swift source in this repository](Engine/RestoreImage/README.md), ported from Eryk Wieliczko's MIT implementation. Its recorded source hashes, toolchain, two-build comparison and binary digest are checked alongside the engine source lock. It ships in the app at `Contents/Helpers/omarchy-restore-image`, signed by the app's release signing (Developer ID, hardened runtime, secure timestamp, no entitlements), not inside the engine archive. The privileged helper passes an install's engine a root-only copy whose signature satisfies the app team's requirement, and the engine refuses to run an install without one. The helper requires macOS 14 or newer; the installer app already requires macOS 15 or newer.
+The helper is built from the [Swift source in this repository](Engine/RestoreImage/README.md), ported from Eryk Wieliczko's MIT implementation. Its recorded source hashes, toolchain, two-build comparison and binary digest are checked alongside the engine source lock. It ships in the app at `Contents/Helpers/sigmaos-restore-image`, signed by the app's release signing (Developer ID, hardened runtime, secure timestamp, no entitlements), not inside the engine archive. The privileged helper passes an install's engine a root-only copy whose signature satisfies the app team's requirement, and the engine refuses to run an install without one. The helper requires macOS 14 or newer; the installer app already requires macOS 15 or newer.
 
 ## License
 
