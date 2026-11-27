@@ -19,7 +19,7 @@ Installing SigmaOS changes the partition layout of your Mac's internal disk and 
 - [Troubleshooting and bug reports](#troubleshooting-and-bug-reports)
 - [Contributing](#contributing)
 - [Related repositories and where to ask](#related-repositories-and-where-to-ask)
-- [Upgrading from a `com.sigmaos.mx` preview](#upgrading-from-a-comomarchymx-preview)
+- [Upgrading from a `com.sigmaos.mx` preview](#upgrading-from-a-comsigmaosmx-preview)
 - [Source layout](#source-layout)
 - [Apple restore inputs](#apple-restore-inputs)
 - [License](#license)
@@ -48,7 +48,7 @@ Why a catalog check exists: `make-unsigned-catalog.py` refuses inputs that miss,
 
 - **Back up macOS first.** The installer shrinks your macOS container and adds partitions. The install screen has a checkbox that you must tick ("I have a current backup and approve the disk layout/resize above") before Install unlocks. Local Time Machine snapshots are restore points on the startup disk and are not a backup.
 - **Disk space.** The app computes an allocation from your disk and shows a size you can edit in whole gigabytes. It recommends leaving macOS about 38 GB free and warns if the plan leaves less. Free space shown in macOS is not necessarily space the installer can release for a new partition; if it cannot, it says so and does not change the disk.
-- **Encryption.** The installed system encrypts its disk at first boot with the password you choose then. The installer text says: "Your first-boot password encrypts SigmaOS. Keep it safe: there's no recovery key." The app records the encryption setting in `omarchy/install.conf` on the SigmaOS EFI partition; if it cannot be saved, the app tells you SigmaOS will encrypt at first boot. See [EFI encryption handoff](docs/efi-encryption-handoff.md).
+- **Encryption.** The installed system encrypts its disk at first boot with the password you choose then. The installer text says: "Your first-boot password encrypts SigmaOS. Keep it safe: there's no recovery key." The app records the encryption setting in `sigmaos/install.conf` on the SigmaOS EFI partition; if it cannot be saved, the app tells you SigmaOS will encrypt at first boot. See [EFI encryption handoff](docs/efi-encryption-handoff.md).
 - **FileVault.** The app checks the FileVault state of macOS while inspecting the Mac.
 - **macOS and hardware.** The app requires macOS 15 or newer (`LSMinimumSystemVersion` 15.0). The MacBook Neo target is recorded as qualified only for firmware 26.6.2 (`Recovery/README.md`).
 - **Power and network.** Keep the Mac open and plugged in during installation (the app says so). The install downloads several gigabytes; the app resumes stalled downloads. It also needs HTTPS access to Apple's restore-image servers, see [Apple restore inputs](#apple-restore-inputs).
@@ -60,7 +60,7 @@ Why a catalog check exists: `make-unsigned-catalog.py` refuses inputs that miss,
 The simplest way is [Homebrew](https://brew.sh):
 
 ```sh
-brew install SigmaOS/mac/omarchy
+brew install SigmaOS/mac/sigmaos
 ```
 
 This installs **SigmaOS Installer** into `/Applications` and opens it; continue at step 4 below. Homebrew prints a deprecation warning about `postflight`, which is expected. The [SigmaOS/homebrew-mac](https://github.com/SigmaOS/homebrew-mac) tap picks up new installer releases automatically.
@@ -104,7 +104,7 @@ The screens, in order, as the app words them (`PlainLanguage.swift`):
 1. **Check.** Inspects the Mac: model, macOS version, power, FileVault and free disk space. A Mac that is not in the signed catalog stops here ("This Mac isn't supported yet"). One that cannot be confirmed stops at "This Mac isn't ready yet". If SigmaOS is already installed, the app says so and offers [removal](#update-remove-and-recover).
 2. **Plan.** Fetches and verifies the channel's signed catalog (Ed25519, trust root in `Release/trust-root.ed25519.pub`) and downloads the pinned engine and image, checking their sizes and SHA-256 digests before use. Shows the disk bar with macOS, free space and SigmaOS, lets you change the SigmaOS size, and holds **Install** until the download is verified and the backup box is ticked.
 3. **Authorize.** Takes your macOS administrator account and password, installs the privileged helper and checks that the account is a macOS administrator. The password is not stored in the journal.
-4. **Install.** The helper runs the pinned Asahi-based engine, which goes through these recorded phases: checking the disk; removing a previous SigmaOS installation if one exists; preparing disk space (shrinking the macOS APFS container); writing boot files (stub and EFI); preparing the final setup; authorizing startup; installing SigmaOS. The app tails the engine journal for progress and verifies the result against the installation record when it finishes. Afterwards the helper writes the encryption choice to `omarchy/install.conf` on the EFI partition.
+4. **Install.** The helper runs the pinned Asahi-based engine, which goes through these recorded phases: checking the disk; removing a previous SigmaOS installation if one exists; preparing disk space (shrinking the macOS APFS container); writing boot files (stub and EFI); preparing the final setup; authorizing startup; installing SigmaOS. The app tails the engine journal for progress and verifies the result against the installation record when it finishes. Afterwards the helper writes the encryption choice to `sigmaos/install.conf` on the EFI partition.
 5. **Finish setup (Recovery).** The app asks you to shut down, hold the power button until "Loading startup options" appears, choose SigmaOS, click Continue and sign in with your macOS account. SigmaOS's native Recovery app then asks for the owner password, installs and enrolls startup software, and shows **Installation complete!** with **Restart**. It can also create an optional recovery account (hold Shift on the finished screen, or Utilities → Create Recovery Account…); skipping it can be done later with **Installation → Set Up Recovery Password…** in the main app. See [`Recovery/README.md`](Recovery/README.md).
 6. **First boot of SigmaOS.** Choose the SigmaOS volume at startup (hold the power button when the Mac starts to pick macOS or SigmaOS) and set the disk password. This repository does not cover what happens after that; see the [Mac packages](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-pkgs).
 
@@ -112,15 +112,15 @@ The helper is a root launchd daemon registered through `SMJobBless`; the app and
 
 ## Update, remove and recover
 
-**Update the installer app.** If you installed with Homebrew, run `brew upgrade omarchy`. Otherwise download the newer dmg from the releases page and replace the app in `/Applications`. A catalog can set a minimum app version; an older app is told to update (the app has a **Download the installer** action).
+**Update the installer app.** If you installed with Homebrew, run `brew upgrade sigmaos`. Otherwise download the newer dmg from the releases page and replace the app in `/Applications`. A catalog can set a minimum app version; an older app is told to update (the app has a **Download the installer** action).
 
 **Update SigmaOS after installing.** This repository does not cover it. See [SigmaOS's manual](https://sigmaos.org/manual/) and the [Mac manual](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-pkgs/tree/main/mac-manual).
 
 **Reinstall.** If SigmaOS is already installed, the app detects it and removes the previous installation as the first phase of a new install. Use that only with a current backup.
 
-**Remove SigmaOS.** Choose **Installation → Remove SigmaOS…** while no install or download runs. The app shows the space that returns to macOS and requires you to type the phrase `delete omarchy installation and data`, plus a macOS administrator account and password. Removal deletes the SigmaOS partitions and grows the macOS container back over them. It refuses a layout it does not recognize (unknown or partial installations, external boot, more than one APFS store, mismatched names or UUIDs) rather than guess. If the layout shows only unallocated space right after macOS, it offers **Free space only** to return it. Details and interruption rules: [`Development/Removal.md`](Development/Removal.md). That document says physical removal had not been executed when it was written.
+**Remove SigmaOS.** Choose **Installation → Remove SigmaOS…** while no install or download runs. The app shows the space that returns to macOS and requires you to type the phrase `delete sigmaos installation and data`, plus a macOS administrator account and password. Removal deletes the SigmaOS partitions and grows the macOS container back over them. It refuses a layout it does not recognize (unknown or partial installations, external boot, more than one APFS store, mismatched names or UUIDs) rather than guess. If the layout shows only unallocated space right after macOS, it offers **Free space only** to return it. Details and interruption rules: [`Development/Removal.md`](Development/Removal.md). That document says physical removal had not been executed when it was written.
 
-If you installed the app with Homebrew, `brew uninstall --zap omarchy` removes the app, its helper and its support files. It does not remove SigmaOS from the disk: use **Remove SigmaOS…** in the app first.
+If you installed the app with Homebrew, `brew uninstall --zap sigmaos` removes the app, its helper and its support files. It does not remove SigmaOS from the disk: use **Remove SigmaOS…** in the app first.
 
 If a removal record is unfinished, the app will not install or remove again until it is resolved. Never delete or edit that record to get around the block: compare its partition UUIDs with the real layout first. A failed resize can leave all SigmaOS partitions removed and the space unallocated. Do not repeat the deletion. The helper keeps its records in `/var/db/org.sigmaos.installer`.
 
@@ -137,7 +137,7 @@ Common messages and what they mean:
 
 - "This Mac isn't supported yet": the Mac's model is not in the release's catalog. See [Supported Macs](#supported-macs).
 - "Couldn't load" in the Release channel menu: no catalog is published for that channel, or the network failed. Choose **Check Channels Again**. "No Mac release yet" means a signed empty catalog is published.
-- "The encryption choice wasn't saved, so SigmaOS will encrypt its disk at first boot": the installer could not write `omarchy/install.conf` to the EFI partition. Fixed for busy volumes in installer 2.3.12 ([#156](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/pull/156)); see [EFI encryption handoff](docs/efi-encryption-handoff.md).
+- "The encryption choice wasn't saved, so SigmaOS will encrypt its disk at first boot": the installer could not write `sigmaos/install.conf` to the EFI partition. Fixed for busy volumes in installer 2.3.12 ([#156](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/pull/156)); see [EFI encryption handoff](docs/efi-encryption-handoff.md).
 - "Not enough free space": the download needs more room than is available. Free space on macOS and run **Check available space**.
 - "An earlier removal didn't finish" or "The installer couldn't clear an earlier installation's record": see [Update, remove and recover](#update-remove-and-recover). Keep the records for support.
 - macOS asks about Login Items: the privileged helper appears under System Settings → General → Login Items.
@@ -210,7 +210,7 @@ Further reading:
 | [AaryanSinghChauhan09/SigmaOS-pkgs](https://github.com/AaryanSinghChauhan09/SigmaOS-pkgs) | Recipes that build and publish those packages to pkgs.sigmaos.org |
 | [AaryanSinghChauhan09/SigmaOS-mac](https://github.com/AaryanSinghChauhan09/SigmaOS-mac) | The earlier SigmaOS 4 fork for Macs, installed by script through Asahi Alarm. It remains for Macs that update from it. It is not this installer and takes no package changes |
 
-Questions and help: the community [Discord](https://discord.gg/KNQRk7dMzy) (the homepage of AaryanSinghChauhan09/SigmaOS-mac). Bugs and feature requests: [issues on this repository](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/issues); for a package or Linux-side problem, use the issues of [sigmaos-mac-pkgs](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-pkgs/issues) or [omarchy](https://github.com/AaryanSinghChauhan09/SigmaOS/issues).
+Questions and help: the community [Discord](https://discord.gg/KNQRk7dMzy) (the homepage of AaryanSinghChauhan09/SigmaOS-mac). Bugs and feature requests: [issues on this repository](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-installer/issues); for a package or Linux-side problem, use the issues of [sigmaos-mac-pkgs](https://github.com/AaryanSinghChauhan09/SigmaOS-mac-pkgs/issues) or [sigmaos](https://github.com/AaryanSinghChauhan09/SigmaOS/issues).
 
 ## Upgrading from a `com.sigmaos.mx` preview
 
